@@ -1,0 +1,115 @@
+# Push a tag, get a release. Nothing is published until the same checks CI
+# runs have passed on the tagged tree, so a broken tag produces a red run
+# rather than a broken download.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the mod
+        uses: actions/checkout@v4
+        with:
+          path: mod
+
+      - name: Check out the engine
+        uses: actions/checkout@v4
+        with:
+          repository: bryanthaboi/gen1recomp
+          ref: ${{ vars.ENGINE_REF || 'dev' }}
+          path: engine
+
+      - name: Install LuaJIT
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq luajit
+
+      # A tag that disagrees with the manifest would ship a package whose
+      # version is a lie, and the launcher's auto-update reads the manifest.
+      # Fail here rather than let that out.
+      - name: The tag must match the manifest
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          man=$(python3 -c "import json; print(json.load(open('mod/manifest.json'))['version'])")
+          if [ "$tag" != "$man" ]; then
+            echo "tag v$tag but manifest says $man"
+            exit 1
+          fi
+          echo "VERSION=$man" >> "$GITHUB_ENV"
+
+      - name: Graft the mod into the engine tree
+        run: |
+          rm -rf engine/mods/level_caps
+          mkdir -p engine/mods/level_caps
+          cp -r mod/. engine/mods/level_caps/
+          rm -rf engine/mods/level_caps/.git engine/mods/level_caps/.github
+
+      - name: Tests
+        working-directory: engine
+        run: luajit mods/level_caps/tests/level_caps_test.lua
+
+      - name: Validate
+        working-directory: engine
+        run: python3 tools/modkit.py validate mods/level_caps --strict
+
+      - name: Lint
+        working-directory: engine
+        run: python3 tools/modkit.py lint mods/level_caps
+
+      - name: Pack
+        working-directory: engine
+        run: python3 tools/modkit.py pack mods/level_caps
+
+      # modkit packs reproducibly, so this digest is the one anybody can
+      # recompute from the tag.
+      - name: Checksum
+        run: |
+          pkg="engine/level_caps-${VERSION}.modpkg"
+          test -f "$pkg" || { echo "no package at $pkg"; exit 1; }
+          sha256sum "$pkg" | tee checksum.txt
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Release notes from the changelog
+        run: |
+          python3 - "mod/CHANGELOG.md" "$VERSION" > notes.md <<'PY'
+          import os, sys
+          path, ver = sys.argv[1], sys.argv[2]
+          body = []
+          if os.path.exists(path):
+              taking = False
+              for line in open(path, encoding="utf-8"):
+                  if line.startswith("## "):
+                      if taking:
+                          break
+                      taking = line.strip() == "## " + ver
+                      continue
+                  if taking:
+                      body.append(line.rstrip())
+          print("\n".join(body).strip() or "Release %s" % ver)
+          PY
+          {
+            echo
+            echo '---'
+            echo
+            echo 'Import the `.modpkg` from the mod manager. Built by CI from'
+            echo "the \`$GITHUB_REF_NAME\` tag; \`sha256\`:"
+            echo
+            echo '```'
+            cut -d' ' -f1 checksum.txt
+            echo '```'
+          } >> notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$PKG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "level_caps $VERSION" \
+            --notes-file notes.md

@@ -1,0 +1,34 @@
+-- Sharing metadata (25-community-and-ecosystem.md 3.2).  Read by tooling
+-- and the manager detail pane; never by the loader's merge.
+return {
+  summary = "No Pokemon may out-level the next gym leader, Elite Four member or Champion.",
+  author = "Pokemon Gen 1 Recompilation Project",
+  contact = "https://github.com/bryanthaboi/gen1recomp",
+  tags = { "challenge", "mechanic", "exp", "level-cap", "hardcore" },
+  differences = {
+    changed = {
+      "LEVEL CAP on: a Pokemon at or above the cap gains no experience at all",
+      "ALLOW OVER LVL NO: a trainer battle is refused outright while any party member is over the cap",
+    },
+    added = {
+      "LEVEL CAP (OFF / STRICT / SOFT +5 / EASY +10) and ALLOW OVER LVL rows in OPTIONS",
+      "inside the league, a refused battle offers to send the over-levelled mons to the PC",
+      "UP TO CAP in the party submenu: walks a Pokemon to the cap one level at a time, so no level-up move is skipped, with an evolution check at every threshold",
+      "currentCap, nextMilestone, milestoneLevels and overLevelled exports for trackers and HUDs",
+    },
+    known = {
+      "the caps are read from each trainer's real roster, so a mod that rebalances the gym curve moves them automatically; nothing here hard-codes 14/21/24/29/43/43/47/50/56/58/60/62/65",
+      "Rare Candy is not blocked: it raises a level without ever going through the experience path",
+      "UP TO CAP is free and instant by design; it exists so a fresh catch can join the team without grinding, not as a reward",
+      "the UP TO CAP label is a raw English literal rather than a Strings() lookup, so a translation mod cannot reach it",
+      "stat exp still accrues at the cap, because Experience.apply credits it before exp.gain is consulted",
+      "wild battles are never refused, only trainer battles; a Pokemon Center PC is the way back under the cap outside the league",
+      "the milestone-to-trainer map is fixed (OPP_BROCK ... OPP_RIVAL3), so a total conversion with different leaders gets no caps rather than wrong ones",
+      "needs engine_internals: no hook among the engine's 45 can veto a battle, so BattleState.newTrainer is patched at its single choke point",
+    },
+  },
+  credits = {
+    { who = "pret/pokered", for_ = "the trainer rosters and victory flags the caps are derived from" },
+  },
+  compat = { engine = ">=1.0.0 <2.0.0", modApi = 2 },
+}

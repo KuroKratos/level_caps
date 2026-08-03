@@ -1,0 +1,60 @@
+# A mod cannot test itself: the suite runs against the engine's own harness
+# (tests/modkit) and its ROM-free fixture, so CI checks out gen1recomp and
+# grafts this repo into mods/level_caps before running anything.
+#
+# No ROM is ever needed. The fixture exists precisely so this works on a
+# clean runner.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the mod
+        uses: actions/checkout@v4
+        with:
+          path: mod
+
+      # Pinned by the ENGINE_REF repository variable when you need a specific
+      # release; the default tracks the engine's own default branch, which is
+      # what catches a seam disappearing under you.
+      - name: Check out the engine
+        uses: actions/checkout@v4
+        with:
+          repository: bryanthaboi/gen1recomp
+          ref: ${{ vars.ENGINE_REF || 'dev' }}
+          path: engine
+
+      - name: Install LuaJIT
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq luajit
+
+      - name: Graft the mod into the engine tree
+        run: |
+          rm -rf engine/mods/level_caps
+          mkdir -p engine/mods/level_caps
+          cp -r mod/. engine/mods/level_caps/
+          rm -rf engine/mods/level_caps/.git engine/mods/level_caps/.github
+
+      - name: Tests
+        working-directory: engine
+        run: luajit mods/level_caps/tests/level_caps_test.lua
+
+      - name: Validate
+        working-directory: engine
+        run: python3 tools/modkit.py validate mods/level_caps --strict
+
+      - name: Lint
+        working-directory: engine
+        run: python3 tools/modkit.py lint mods/level_caps
+
+      # The whole catalogue, so a change here cannot quietly break a sibling
+      # mod through the shared registries.
+      - name: The engine's own mod suite
+        working-directory: engine
+        run: luajit tests/run_modkit.lua
