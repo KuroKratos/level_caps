@@ -445,8 +445,17 @@ do
   -- NO, over the cap, outside the league: refused, no PC offer
   game = fakeGame({}, { mon(9), mon(40) }, "VIRIDIAN_CITY")
   battle = BattleState.newTrainer(game, "OPP_BROCK", 1)
-  T.eq(battle.result, "skipped", "an over-levelled party is refused")
-  T.eq(battle.afterQueue, "finish", "and the battle is told to end")
+  -- These four fields together are what leaves a battle. Asserting only
+  -- three of them is how a soft lock shipped green: the earlier suite
+  -- checked result and afterQueue but not `phase`, and the drain that reads
+  -- afterQueue lives inside `if self.phase == "messages"` -- so the battle
+  -- opened, refused, and then never ended. `result` is also checked against
+  -- a value the ENGINE uses; "skipped" was this mod's own invention and
+  -- matched no branch anywhere in src/.
+  T.eq(battle.result, "run", "an over-levelled party is refused")
+  T.eq(battle.phase, "messages", "and the battle is put in the phase whose "
+       .. "queue drain is what calls finish()")
+  T.eq(battle.afterQueue, "finish", "and told to end when the queue empties")
   T.eq(#battle.queue, 0, "the intro queue is dropped")
   T.eq(#battle.said, 1, "exactly one line is said")
   T.check(battle.said[1]:find("LV.11", 1, true) ~= nil,
@@ -457,7 +466,8 @@ do
   -- NO, over the cap, AT the league: the PC offer appears
   game = fakeGame({}, { mon(9), mon(40), mon(50) }, "LORELEIS_ROOM")
   battle = BattleState.newTrainer(game, "OPP_LORELEI", 1)
-  T.eq(battle.result, "skipped", "refused inside the league too")
+  T.eq(battle.result, "run", "refused inside the league too")
+  T.eq(battle.phase, "messages", "and the league refusal ends the battle too")
   T.eq(#battle.choices, 1, "the league offers the PC instead of a dead end")
 
   battle.choices[1].fn(false)

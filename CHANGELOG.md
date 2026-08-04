@@ -3,6 +3,37 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.3.0
+
+### Fixed
+
+- **`ALLOW OVER LVL = NO` soft-locked the game.** The battle opened, printed
+  the refusal, and then never ended: you could not attack, switch or run.
+
+  Leaving a battle takes four fields, and the refusal only set three. The
+  drain that reads `afterQueue` and calls `finish()` lives inside
+  `if self.phase == "messages"`, so without `battle.phase = "messages"` it
+  was simply never reached. The engine's own equivalent — the Safari with no
+  Balls left — sets all four, and the refusal now mirrors it exactly.
+- `battle.result` is `"run"` instead of `"skipped"`. `"skipped"` was this
+  mod's invention and matched no branch anywhere in the engine; `"run"` is a
+  real value and correctly leaves the trainer undefeated.
+
+### Changed
+
+- The test suite now asserts `phase` alongside `result` and `afterQueue`, and
+  checks `result` against a value the engine actually uses. The old suite
+  passed while the game locked, because it asserted the mod's own fiction
+  rather than the engine's contract.
+
+## 1.2.0
+
+### Fixed
+
+- `SOFT +5` and `EASY +10` became **`SOFT UP5`** and **`EASY UP10`**. The
+  Gen 1 font has no `+` glyph, so the old labels logged a missing-glyph
+  warning on every draw and printed a hole.
+
 ## 1.1.0
 
 ### Added

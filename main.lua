@@ -212,20 +212,35 @@ return function(mod)
     local over = overLevelled(g, cap)
     if #over == 0 then return end
 
+    -- Leaving a battle takes FOUR fields, not three.  The engine's own
+    -- precedent is the Safari with no Balls left (BattleState.lua:1502):
+    --
+    --   self:say(...)  self.phase = "messages"
+    --   self.result = "run"  self.afterQueue = "finish"
+    --
+    -- `phase` is the load-bearing one: the drain that reads afterQueue and
+    -- calls finish() sits inside `if self.phase == "messages"`, so without it
+    -- the queue empties, nothing ends the battle, and the player is stuck in
+    -- a fight they were told they cannot have.  `result` must also be a value
+    -- the engine actually uses -- "run" leaves the trainer undefeated, which
+    -- is exactly what a refused battle means; an invented "skipped" matches
+    -- no branch anywhere.
     battle.queue = {}
-    battle.result = "skipped"
-    battle.afterQueue = "finish"
     battle:say(("Your POKéMON are\nabove the LV.%d cap!"):format(cap))
-    if not atLeague(g) then return end
-    -- Inside the league there is no walking it off, so offer the way out.
-    battle:sayChoice("Send the over-LV.\nones to the PC?", function(yes)
-      if not yes then return end
-      if depositOver(g, over) then
-        battle:say("They were sent\nto the PC!")
-      else
-        battle:say("But you would have\nno POKéMON left!")
-      end
-    end)
+    if atLeague(g) then
+      -- Inside the league there is no walking it off, so offer the way out.
+      battle:sayChoice("Send the over-LV.\nones to the PC?", function(yes)
+        if not yes then return end
+        if depositOver(g, over) then
+          battle:say("They were sent\nto the PC!")
+        else
+          battle:say("But you would have\nno POKéMON left!")
+        end
+      end)
+    end
+    battle.phase = "messages"
+    battle.result = "run"
+    battle.afterQueue = "finish"
   end
 
   -- ------------------------------------------------------------------
