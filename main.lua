@@ -66,33 +66,95 @@ local MILESTONES = {
 -- Piloswine 31, and the two gyms open in that order. The "lowest top level
 -- among the unbeaten" rule handles it without a special case, exactly as it
 -- handles Koga and Sabrina in Kanto.
+-- Gold does NOT have EVENT_BEAT_<LEADER> flags. Beating a gym leader hands
+-- you a BADGE, and the badge IS the record: constants/engine_flags.asm makes
+-- ENGINE_ZEPHYRBADGE bit 0 of wJohtoBadges, and the port lands it in
+-- save.player.badges (src/world/gen2/World.lua:1669). Reading save.flags for
+-- a name nothing writes is why the cap sat at Falkner's 9 forever.
+--
+-- Four different signals, one per phase:
+--
+--   Johto gym    save.player.badges[NAME]
+--   E4/Champion  save.hallOfFame.count > 0   -- the count IS "times the
+--                champion was beaten" (src/core/gen2/Save.lua:185), and the
+--                four members cannot be fought separately anyway
+--   Kanto gym    save.player.kantoBadges[NAME]
+--   Red          save.spawnAfterChampion == SPAWN_RED
+--                (HallOfFame.markRedCredits)
+local function badge(store, name)
+  return function(save)
+    local owned = save and save.player and save.player[store]
+    return type(owned) == "table" and owned[name] == true
+  end
+end
+
+local function championBeaten(save)
+  local hof = save and save.hallOfFame
+  return type(hof) == "table"
+     and ((tonumber(hof.count) or 0) > 0 or hof.entered == true)
+end
+
+local function redBeaten(save)
+  if type(save) ~= "table" then return false end
+  local ok, HallOfFame = pcall(require, "src.core.gen2.HallOfFame")
+  local spawn = ok and type(HallOfFame) == "table" and HallOfFame.SPAWN_RED
+  return spawn ~= nil and save.spawnAfterChampion == spawn
+end
+
 local GEN2_MILESTONES = {
-  { key = "zephyr",   label = "FALKNER",  trainer = "FALKNER",  party = 1,
-    flag = "EVENT_BEAT_FALKNER" },
-  { key = "hive",     label = "BUGSY",    trainer = "BUGSY",    party = 1,
-    flag = "EVENT_BEAT_BUGSY" },
-  { key = "plain",    label = "WHITNEY",  trainer = "WHITNEY",  party = 1,
-    flag = "EVENT_BEAT_WHITNEY" },
-  { key = "fog",      label = "MORTY",    trainer = "MORTY",    party = 1,
-    flag = "EVENT_BEAT_MORTY" },
-  { key = "storm",    label = "CHUCK",    trainer = "CHUCK",    party = 1,
-    flag = "EVENT_BEAT_CHUCK" },
-  { key = "mineral",  label = "JASMINE",  trainer = "JASMINE",  party = 1,
-    flag = "EVENT_BEAT_JASMINE" },
-  { key = "glacier",  label = "PRYCE",    trainer = "PRYCE",    party = 1,
-    flag = "EVENT_BEAT_PRYCE" },
-  { key = "rising",   label = "CLAIR",    trainer = "CLAIR",    party = 1,
-    flag = "EVENT_BEAT_CLAIR" },
+  -- ---- the eight Johto gyms
+  { key = "zephyr",  label = "FALKNER",  trainer = "FALKNER",  party = 1,
+    done = badge("badges", "ZEPHYR") },
+  { key = "hive",    label = "BUGSY",    trainer = "BUGSY",    party = 1,
+    done = badge("badges", "HIVE") },
+  { key = "plain",   label = "WHITNEY",  trainer = "WHITNEY",  party = 1,
+    done = badge("badges", "PLAIN") },
+  { key = "fog",     label = "MORTY",    trainer = "MORTY",    party = 1,
+    done = badge("badges", "FOG") },
+  { key = "storm",   label = "CHUCK",    trainer = "CHUCK",    party = 1,
+    done = badge("badges", "STORM") },
+  { key = "mineral", label = "JASMINE",  trainer = "JASMINE",  party = 1,
+    done = badge("badges", "MINERAL") },
+  { key = "glacier", label = "PRYCE",    trainer = "PRYCE",    party = 1,
+    done = badge("badges", "GLACIER") },
+  { key = "rising",  label = "CLAIR",    trainer = "CLAIR",    party = 1,
+    done = badge("badges", "RISING") },
+
+  -- ---- the Elite Four and the Champion. One signal for all five: the
+  -- ---- gauntlet cannot be left half-finished, so the cap sits at Will's
+  -- ---- roster for the whole run and lifts once the Hall of Fame is entered.
   { key = "will",     label = "WILL",     trainer = "WILL",     party = 1,
-    flag = "EVENT_BEAT_WILL" },
+    done = championBeaten },
   { key = "koga2",    label = "KOGA",     trainer = "KOGA",     party = 1,
-    flag = "EVENT_BEAT_KOGA" },
+    done = championBeaten },
   { key = "bruno2",   label = "BRUNO",    trainer = "BRUNO",    party = 1,
-    flag = "EVENT_BEAT_BRUNO" },
+    done = championBeaten },
   { key = "karen",    label = "KAREN",    trainer = "KAREN",    party = 1,
-    flag = "EVENT_BEAT_KAREN" },
+    done = championBeaten },
   { key = "champion", label = "LANCE",    trainer = "CHAMPION", party = nil,
-    flag = "EVENT_BEAT_ELITE_FOUR" },
+    done = championBeaten },
+
+  -- ---- Kanto, which is the post-game half of Gold
+  { key = "boulder2", label = "BROCK",    trainer = "BROCK",    party = 1,
+    available = championBeaten, done = badge("kantoBadges", "BOULDER") },
+  { key = "cascade2", label = "MISTY",    trainer = "MISTY",    party = 1,
+    available = championBeaten, done = badge("kantoBadges", "CASCADE") },
+  { key = "thunder2", label = "LT.SURGE", trainer = "LT_SURGE", party = 1,
+    available = championBeaten, done = badge("kantoBadges", "THUNDER") },
+  { key = "rainbow2", label = "ERIKA",    trainer = "ERIKA",    party = 1,
+    available = championBeaten, done = badge("kantoBadges", "RAINBOW") },
+  { key = "soul2",    label = "JANINE",   trainer = "JANINE",   party = 1,
+    available = championBeaten, done = badge("kantoBadges", "SOUL") },
+  { key = "marsh2",   label = "SABRINA",  trainer = "SABRINA",  party = 1,
+    available = championBeaten, done = badge("kantoBadges", "MARSH") },
+  { key = "volcano2", label = "BLAINE",   trainer = "BLAINE",   party = 1,
+    available = championBeaten, done = badge("kantoBadges", "VOLCANO") },
+  { key = "earth2",   label = "BLUE",     trainer = "BLUE",     party = nil,
+    available = championBeaten, done = badge("kantoBadges", "EARTH") },
+
+  -- ---- and the mountain
+  { key = "red",      label = "RED",      trainer = "RED",      party = nil,
+    available = badge("kantoBadges", "EARTH"), done = redBeaten },
 }
 
 local OFFSETS = { strict = 0, soft = 5, easy = 10 }
@@ -213,11 +275,45 @@ return function(mod)
   -- either one leaves the other still governing. No ordering assumption, no
   -- special case, and it generalises to any milestone pair a mod unlocks
   -- together.
+  -- "Beaten" is a save FLAG on Red/Blue/Yellow and four different stores on
+  -- Gold, so a milestone may carry a predicate instead of a flag name. The
+  -- flag path is untouched, which is what keeps Gen 1 exactly as it was.
+  local function beaten(milestone, save)
+    if milestone.done then return milestone.done(save) == true end
+    return ((save and save.flags) or {})[milestone.flag] == true
+  end
+
+  -- A milestone that cannot be reached yet must not govern the cap. Kanto is
+  -- post-game and its gyms are unordered, so Janine's 39 sits in the pool from
+  -- the very first step -- and being the lowest unbeaten anywhere, it capped a
+  -- Johto run at 39 before Clair's 40 ever applied. Gating on the Hall of Fame
+  -- is what keeps the two halves of the game from arguing.
+  local function available(milestone, save)
+    if not milestone.available then return true end
+    return milestone.available(save) == true
+  end
+
+  -- The highest level already beaten. Kanto's gyms are post-game and can be
+  -- done in any order, so their tops run 39 to 58 with no progression to them
+  -- -- and Janine's 39 sits BELOW the Champion's 50 you just went through.
+  -- Without this floor the cap would drop the moment you entered Kanto,
+  -- benching a team the game had just asked you to bring. Gen 1's ladder is
+  -- monotonic, so this changes nothing there.
+  local function beatenCeiling(save)
+    local best
+    for _, milestone in ipairs(milestones()) do
+      if available(milestone, save) and beaten(milestone, save) then
+        local level = milestoneLevel(milestone)
+        if level and (not best or level > best) then best = level end
+      end
+    end
+    return best
+  end
+
   local function nextMilestone(save)
-    local flags = (save and save.flags) or {}
     local best, bestLevel
     for _, milestone in ipairs(milestones()) do
-      if not flags[milestone.flag] then
+      if available(milestone, save) and not beaten(milestone, save) then
         local level = milestoneLevel(milestone)
         if level and (not bestLevel or level < bestLevel) then
           best, bestLevel = milestone, level
@@ -232,8 +328,12 @@ return function(mod)
   local function currentCap(g)
     local offset = OFFSETS[mod.options:get("level_cap")]
     if not offset then return nil end
-    local milestone, level = nextMilestone(g and g.save)
+    local save = g and g.save
+    local milestone, level = nextMilestone(save)
     if not level then return nil end
+    -- never below what has already been cleared
+    local floor_ = beatenCeiling(save)
+    if floor_ and floor_ > level then level = floor_ end
     return level + offset, milestone
   end
 

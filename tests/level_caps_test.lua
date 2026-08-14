@@ -152,7 +152,14 @@ do
     EVENT_BEAT_LT_SURGE = true, EVENT_BEAT_ERIKA = true,
     EVENT_BEAT_KOGA = true,
   })
-  T.eq(exports.currentCap(other), 38, "beating KOGA first leaves SABRINA governing")
+  -- KOGA is 40 here and SABRINA 38, so beating KOGA first would have dropped
+  -- the cap by two. It does not: a cap never falls below the highest thing
+  -- already beaten. The rule earns its keep in Gold's Kanto, where the gyms
+  -- are post-game and unordered (Janine tops at 39, the Champion at 50), but
+  -- it is the same rule here and the same reason -- you cannot be asked to
+  -- bench a team the game just had you win with.
+  T.eq(exports.currentCap(other), 40,
+       "beating KOGA first keeps its 40 rather than dropping to SABRINA's 38")
 end
 
 -- ------- the Elite Four unlock on the win, and the run ends uncapped

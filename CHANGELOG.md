@@ -3,6 +3,43 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.5.0
+
+### Fixed
+
+- **The cap never moved on Gold.** Beating Falkner left you locked at 9, so
+  the first cave south of Goldenrod was unsurvivable.
+
+  Gold has no `EVENT_BEAT_<LEADER>` flag. A gym win hands you a **badge**, and
+  the badge *is* the record — `ENGINE_ZEPHYRBADGE` is bit 0 of `wJohtoBadges`,
+  which the port stores in `save.player.badges`. This mod was reading
+  `save.flags` for a name nothing ever writes.
+
+  Four signals now, one per phase: `save.player.badges` for the Johto gyms,
+  `save.hallOfFame.count` for the Elite Four and the Champion,
+  `save.player.kantoBadges` for Kanto, and `spawnAfterChampion` for Red.
+
+### Added
+
+- **Kanto and Red join the ladder**, so the full progression is gyms → Elite
+  Four → Champion → Kanto → Red. On vanilla Gold the cap walks
+  **9 → 16 → 20 → 25 → 30 → 31 → 35 → 40 → 42 → 50 → 58 → 81**.
+
+  The Elite Four does not step member by member: Gold records only the Hall of
+  Fame, not each fight, so the cap holds at Will's 42 for the whole gauntlet
+  and lifts to 50 after. Nothing is lost by it — the run cannot be left
+  half-finished to train.
+
+### Changed
+
+- **Kanto is gated on the Hall of Fame, Red on the Earth Badge.** Without it
+  Janine's 39 was the lowest unbeaten roster in the entire game from the first
+  step, which capped a Johto run at 39 before Clair's 40 ever applied.
+- **A cap never drops below the highest milestone already beaten.** Kanto's
+  gyms are unordered and run from 39 to 58, so clearing the Champion at 50 and
+  then walking into Kanto used to take the cap *down* to 39. This also changes
+  Gen 1: beating Koga at 40 no longer sends you back to Sabrina's 38.
+
 ## 1.4.0
 
 ### Added
