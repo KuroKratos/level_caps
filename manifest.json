@@ -1,7 +1,7 @@
 {
   "id": "level_caps",
   "name": "Level Caps",
-  "version": "1.6.0",
+  "version": "1.6.2",
   "api": 2,
   "entry": "main.lua",
   "profile": "overhaul",

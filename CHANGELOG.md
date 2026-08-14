@@ -3,7 +3,11 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
-## 1.6.0
+## 1.6.2
+
+*1.6.0 and 1.6.1 carry this same change. The release workflow cuts its own tag
+from the manifest version; pushing one by hand alongside it sent the workflow
+down its "newest tag plus a patch" fallback instead. Install this one.*
 
 ### Added
 
