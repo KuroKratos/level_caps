@@ -3,6 +3,30 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.0
+
+### Added
+
+- **Gold support** (`"games": ["gen1", "gen2"]`), with the Johto ladder.
+  Falkner through Clair, then Will, Koga, Bruno, Karen and Lance — read out of
+  their real rosters exactly as the Kanto caps are, so on vanilla Gold they
+  resolve to 9 / 16 / 20 / 25 / 30 / 35 / 31 / 40 / 42 / 44 / 46 / 47 / 50.
+  That is the ladder the Nuzlocke mod publishes, derived rather than copied:
+  a mod that rebalances Whitney moves her cap with her.
+
+### Changed
+
+- Rosters are read through one shape. Gen 1 nests them as `class.parties[i]`,
+  Gold as `class.trainers[i].party`; the party index that picks Giovanni's
+  third team still works on both.
+- **`ALLOW OVER LVL` turns itself off on Gold and says so.** Refusing a battle
+  needs `BattleState.newTrainer`, which Gold does not have — `World:startBattle`
+  constructs and pushes in one call. `LEVEL CAP` itself rides `exp.gain`, which
+  Gold raises, so the mod's main job is unaffected.
+- The follower's happiness bump and the level-up stats box are presence-tested
+  rather than assumed. Gold has neither; without them the walk still levels the
+  Pokemon and still offers its moves.
+
 ## 1.3.0
 
 ### Fixed

@@ -54,6 +54,47 @@ local MILESTONES = {
     flag = "EVENT_BEAT_CHAMPION_RIVAL" },
 }
 
+-- Johto, in progression order. Same rule as Kanto: the cap is read out of the
+-- named trainer's real roster, so these are ids and flags only -- no levels.
+--
+-- On vanilla Gold that resolves to 9 / 16 / 20 / 25 / 30 / 35 / 31 / 40 for
+-- the gyms, 42 / 44 / 46 / 47 for the Elite Four and 50 for Lance, which is
+-- the ladder the Nuzlocke mod publishes. Deriving rather than copying is the
+-- point: a mod that rebalances Whitney moves her cap with her.
+--
+-- Note the ladder is NOT monotonic -- Jasmine's Steelix is 35 and Pryce's
+-- Piloswine 31, and the two gyms open in that order. The "lowest top level
+-- among the unbeaten" rule handles it without a special case, exactly as it
+-- handles Koga and Sabrina in Kanto.
+local GEN2_MILESTONES = {
+  { key = "zephyr",   label = "FALKNER",  trainer = "FALKNER",  party = 1,
+    flag = "EVENT_BEAT_FALKNER" },
+  { key = "hive",     label = "BUGSY",    trainer = "BUGSY",    party = 1,
+    flag = "EVENT_BEAT_BUGSY" },
+  { key = "plain",    label = "WHITNEY",  trainer = "WHITNEY",  party = 1,
+    flag = "EVENT_BEAT_WHITNEY" },
+  { key = "fog",      label = "MORTY",    trainer = "MORTY",    party = 1,
+    flag = "EVENT_BEAT_MORTY" },
+  { key = "storm",    label = "CHUCK",    trainer = "CHUCK",    party = 1,
+    flag = "EVENT_BEAT_CHUCK" },
+  { key = "mineral",  label = "JASMINE",  trainer = "JASMINE",  party = 1,
+    flag = "EVENT_BEAT_JASMINE" },
+  { key = "glacier",  label = "PRYCE",    trainer = "PRYCE",    party = 1,
+    flag = "EVENT_BEAT_PRYCE" },
+  { key = "rising",   label = "CLAIR",    trainer = "CLAIR",    party = 1,
+    flag = "EVENT_BEAT_CLAIR" },
+  { key = "will",     label = "WILL",     trainer = "WILL",     party = 1,
+    flag = "EVENT_BEAT_WILL" },
+  { key = "koga2",    label = "KOGA",     trainer = "KOGA",     party = 1,
+    flag = "EVENT_BEAT_KOGA" },
+  { key = "bruno2",   label = "BRUNO",    trainer = "BRUNO",    party = 1,
+    flag = "EVENT_BEAT_BRUNO" },
+  { key = "karen",    label = "KAREN",    trainer = "KAREN",    party = 1,
+    flag = "EVENT_BEAT_KAREN" },
+  { key = "champion", label = "LANCE",    trainer = "CHAMPION", party = nil,
+    flag = "EVENT_BEAT_ELITE_FOUR" },
+}
+
 local OFFSETS = { strict = 0, soft = 5, easy = 10 }
 
 -- Where a refused battle can offer the PC instead of just saying no: inside
@@ -89,11 +130,35 @@ return function(mod)
   -- ------------------------------------------------------------------
   -- Reading the caps out of the real rosters
 
-  local function maxRosterLevel(trainer, partyIndex)
-    if type(trainer) ~= "table" or type(trainer.parties) ~= "table" then
-      return nil
+  -- The two carts nest a roster differently, and neither is guessable from
+  -- the other:
+  --
+  --   Gen 1  class.parties[i]          -- a list of rosters
+  --   Gold   class.trainers[i].party   -- a list of TRAINERS, each with one
+  --
+  -- Same meaning, so this normalises to "a list of rosters" and everything
+  -- downstream -- including the party index that picks Giovanni's third team
+  -- -- keeps working untouched.
+  local function rostersOf(trainer)
+    if type(trainer) ~= "table" then return nil end
+    if type(trainer.parties) == "table" and trainer.parties[1] then
+      return trainer.parties
     end
-    local rosters = trainer.parties
+    if type(trainer.trainers) == "table" then
+      local out = {}
+      for _, entry in ipairs(trainer.trainers) do
+        if type(entry) == "table" and type(entry.party) == "table" then
+          out[#out + 1] = entry.party
+        end
+      end
+      if out[1] then return out end
+    end
+    return nil
+  end
+
+  local function maxRosterLevel(trainer, partyIndex)
+    local rosters = rostersOf(trainer)
+    if not rosters then return nil end
     if partyIndex then
       local one = rosters[partyIndex]
       if not one then return nil end
@@ -109,6 +174,28 @@ return function(mod)
       end
     end
     return best
+  end
+
+  -- Which ladder is this cart running? Asked of the trainer registry, because
+  -- that is the very table the caps are read from: if BROCK is not there under
+  -- his Gen 1 id, no Kanto milestone could resolve a level anyway.
+  --
+  -- Memoised, because nextMilestone runs on every exp payout.
+  local ladder
+  local function milestones()
+    if ladder then return ladder end
+    if mod.content.trainers:get("OPP_BROCK") then
+      ladder = MILESTONES
+    elseif mod.content.trainers:get("FALKNER")
+        or mod.content.trainers:get("WHITNEY") then
+      ladder = GEN2_MILESTONES
+    else
+      -- A fixture or a conversion with neither: the Gen 1 table is the
+      -- historical default, and every milestone in it will simply fail to
+      -- resolve a level, which currentCap already reads as "no cap".
+      ladder = MILESTONES
+    end
+    return ladder
   end
 
   -- Read through the merged registry, so another mod's rebalance of a gym
@@ -129,7 +216,7 @@ return function(mod)
   local function nextMilestone(save)
     local flags = (save and save.flags) or {}
     local best, bestLevel
-    for _, milestone in ipairs(MILESTONES) do
+    for _, milestone in ipairs(milestones()) do
       if not flags[milestone.flag] then
         local level = milestoneLevel(milestone)
         if level and (not bestLevel or level < bestLevel) then
@@ -274,8 +361,14 @@ return function(mod)
     local old = mon.stats
     mon.stats = Stats.calc(def, mon.level, mon.dvs, mon.statExp)
     mon.hp = math.min(mon.stats.hp, mon.hp + (mon.stats.hp - old.hp))
+    -- Gold's follower has no modifyHappiness (the adapter says so), and a
+    -- nil call raises rather than no-ops, so this is a presence test and not
+    -- just a pcall.
     pcall(function()
-      require("src.world.PikachuFollower").modifyHappiness(g.save, "LEVELUP", mon)
+      local Follower = require("src.world.PikachuFollower")
+      if type(Follower.modifyHappiness) == "function" then
+        Follower.modifyHappiness(g.save, "LEVELUP", mon)
+      end
     end)
     return def
   end
@@ -316,7 +409,11 @@ return function(mod)
       local def = bumpOneLevel(g, mon)
       local name = mon.nickname or def.name
       say(g, ("%s grew\nto level %d!"):format(name, mon.level), function()
+        -- Gold builds its stats window elsewhere; without one, the walk
+        -- still levels the mon and still offers its moves, it just does not
+        -- show the box.
         local StatBox = require("src.battle.BattleState").StatBox
+        if not StatBox then return learnMovesFor(g, mon, def, mon.level, done) end
         g.stack:push(StatBox.new(g, mon, function()
           learnMovesFor(g, mon, def, mon.level, function()
             -- Checked per level rather than once at the end, so a two-stage
@@ -352,6 +449,7 @@ return function(mod)
   end)
 
   local patched = false
+  local capsOnly = false
   mod.events:on("game.ready", function(ev)
     game = ev and ev.game
     if patched then return end
@@ -361,6 +459,19 @@ return function(mod)
     -- (OverworldController's sight lines and Commands.start_battle) go
     -- through this one function, so it is the single honest choke point.
     local BattleState = require("src.battle.BattleState")
+    -- Gold has no newTrainer: "World:startBattle constructs and pushes in one
+    -- call", so the adapter publishes it absent rather than lie. Wrapping it
+    -- anyway would write onto a name nothing reads -- the write would even
+    -- read back as ours, which is what makes this failure silent. ALLOW OVER
+    -- LVL therefore says it is off rather than appearing to work; the cap
+    -- itself rides exp.gain, which Gold raises, so the mod's main job is
+    -- unaffected.
+    if BattleState.newTrainer == nil then
+      capsOnly = true
+      mod.log:info("ALLOW OVER LVL needs a battle factory this game does not "
+        .. "have, so it stays off; LEVEL CAP itself works normally")
+      return
+    end
     local vanillaNewTrainer = BattleState.newTrainer
     BattleState.newTrainer = function(g, class, partyIndex)
       local battle = vanillaNewTrainer(g, class, partyIndex)
@@ -450,7 +561,7 @@ return function(mod)
   end
   mod.exports.milestoneLevels = function()
     local out = {}
-    for _, milestone in ipairs(MILESTONES) do
+    for _, milestone in ipairs(milestones()) do
       out[milestone.key] = milestoneLevel(milestone)
     end
     return out
