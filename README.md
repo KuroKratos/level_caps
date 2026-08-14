@@ -59,16 +59,77 @@ and Sabrina are unbeaten the cap is the lower of the two, and beating either
 leaves the other governing. No ordering assumption, no special case, and it
 generalises to any pair a mod unlocks together.
 
+## Gold
+
+The Gold ladder is the same idea with a longer table: the eight Johto gyms,
+**all seven rival fights**, each Elite Four member separately, the Champion,
+Blue, and Red. On vanilla Gold it resolves to
+
+```
+7 → 9 → 16 → 20 → 22 → 25 → 30 → 31 → 35 → 38 → 40
+  → 42 → 44 → 46 → 47 → 50 → 58 → 81
+```
+
+Three things are worth knowing.
+
+**The rival counts, and his fights nest oddly.** Gold stores each of the seven
+as *three* rosters, one per starter he took — `RIVAL1_3_TOTODILE` is the third
+fight against the boy who took Totodile. One milestone spans all three and
+reads the highest, so whichever you meet is the same step.
+
+**Cherrygrove gets +2.** His roster there is a single level-5 starter, and a
+strict reading would cap you at 5 before you had fought anything. It is the
+only milestone carrying a bonus.
+
+**Only Blue is kept from Kanto.** Janine tops at 39 and Blaine at 50 — every
+Kanto gym but Viridian sits *below* the Champion you just beat, so putting
+them in the pool could only ever pull the cap back down. Their badges still
+open Viridian, so nothing is skippable.
+
+## How Gold knows what you beat
+
+Gold has no `EVENT_BEAT_<LEADER>` flag, and nothing at all for the rival. A
+gym win hands you a **badge**, and that badge is the only record — which is
+enough to know a gym fell, but cannot tell Will from Karen, and says nothing
+about the rival.
+
+So the mod keeps its own. `battle.ended` names the trainer it just ended on
+**both** engines, and `mod.save` persists under `save.modData[level_caps]` on
+both too, so a win against a roster some milestone named is written down as it
+happens:
+
+| | class | encounter |
+|---|---|---|
+| Gen 1 | `battle.oppClass` | `battle.partyIndex` |
+| Gold | `trainer.classId` | `trainer.memberId` |
+
+Only rosters a milestone asked for are recorded — a Gold run walks past some
+390 trainers and the other 370-odd have no business in a save file. A loss, a
+refused battle and a wild fight all record nothing.
+
+The engine's own signals stay as the fallback, so a save made before the mod
+ever watched a battle still knows where it is: badges for the Johto gyms, the
+Hall of Fame for the league, the Kanto badges for Viridian, and Red's own
+spawn flag. Such a save reads the *rival* milestones as unbeaten, but a cap
+never falls below the highest milestone already cleared, so it lands on the
+right step anyway.
+
 ## The two rows
 
-**LEVEL CAP** — `OFF` (default) / `STRICT` / `SOFT +5` / `EASY +10`.
+**LEVEL CAP** — `OFF` (default) / `STRICT` / `MILD UP2` / `SOFT UP5` /
+`EASY UP10`.
+
+The bonus is spelled `UP<n>` rather than `+<n>` because the Gen 1 font has no
+`+` glyph — it is simply not in the extracted charmap, and the old labels
+printed a hole and logged a warning on every draw.
 
 A Pokémon *at* the cap keeps the level it earned and stops there; only levels
 strictly above it are out of reach. The block is per-Pokémon, so an
 under-levelled reserve keeps growing while your lead sits at the ceiling.
 
-Elite Four caps unlock on the **first win** against each member — the engine
-already sets a victory flag there, so it happens the moment the battle ends.
+Elite Four caps unlock on the **first win** against each member, on both
+games — Gen 1 through the engine's own victory flag, Gold through the record
+above.
 
 **ALLOW OVER LVL** — `YES` (default) / `NO`.
 
@@ -100,14 +161,14 @@ the species, so the new learnset applies immediately.
 
 It is free and instant by design: it exists so a fresh catch can join the team
 without grinding, not as a reward. The engine's own level ceiling still wins,
-so a generous `EASY +10` near level 100 stops at 100.
+so a generous `EASY UP10` near level 100 stops at 100.
 
 ## When would anything even be over the cap?
 
 The cap blocks experience, so normally nothing is. It happens when you turn the
-row on mid-run, tighten `EASY` to `STRICT`, receive a trade or gift above the
-cap, or use Rare Candy — which is **not** blocked, because it raises a level
-without ever going through the experience path.
+row on mid-run, tighten `EASY UP10` to `STRICT`, receive a trade or gift above
+the cap, or use Rare Candy — which is **not** blocked, because it raises a
+level without ever going through the experience path.
 
 ## Why `engine_internals`
 
@@ -126,8 +187,16 @@ front of a leader you can never fight.
 - Rare Candy bypasses the cap (see above).
 - Stat exp still accrues at the cap: `Experience.apply` credits it before
   `exp.gain` is consulted.
-- The milestone-to-trainer map is fixed (`OPP_BROCK` … `OPP_RIVAL3`). A total
-  conversion with different leaders gets **no** caps rather than wrong ones.
+- The milestone-to-trainer map is fixed (`OPP_BROCK` … `OPP_RIVAL3` on Gen 1,
+  `FALKNER` … `RED` on Gold). A total conversion with different leaders gets
+  **no** caps rather than wrong ones.
+- **`ALLOW OVER LVL` is Gen 1 only.** Refusing a battle needs a battle factory
+  to wrap, and Gold's `World:startBattle` constructs and pushes in one call.
+  The row says so and stays off; `LEVEL CAP` itself rides `exp.gain`, which
+  Gold raises, so the mod's main job is unaffected.
+- Gold's Elite Four has no rematch rosters — every boss class carries exactly
+  one team — so re-clearing the league changes no cap. The upgraded teams are
+  an HGSS feature.
 
 ## Composing with `modern_qol`
 

@@ -3,6 +3,80 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.6.0
+
+### Added
+
+- **`MILD UP2`**, between `STRICT` and `SOFT UP5`. The row now reads
+  `OFF / STRICT / MILD UP2 / SOFT UP5 / EASY UP10`. `UP<n>` rather than `+<n>`
+  because the Gen 1 font has no `+` glyph.
+
+- **The mod records its own milestones.** Gold has no `EVENT_BEAT_<LEADER>`
+  flag and nothing whatsoever for the rival, so half this ladder could not
+  exist while the mod only read what the cart writes.
+
+  It does not have to. `battle.ended` names the trainer it just ended on
+  **both** engines, and `mod.save` persists under `save.modData[level_caps]`
+  on both too — `src/core/Game.lua:1046` and `src/core/Game2.lua:204` wire the
+  same bucket, and Gold's `Save.normalize` keeps keys it does not know. So a
+  win against a roster some milestone named is written down as it happens:
+  `battle.oppClass` + `partyIndex` on Gen 1, `trainer.classId` +
+  `trainer.memberId` on Gold.
+
+  Only rosters a milestone asked for are recorded — a Gold run walks past some
+  390 trainers. A loss, a refused battle (`result` is `"run"`) and a wild
+  fight all record nothing.
+
+- **The seven rival fights are milestones**, from Cherrygrove to the Indigo
+  Plateau Center. Gold stores each as three rosters, one per starter he took
+  (`RIVAL1_3_TOTODILE`); one milestone spans all three and reads the highest,
+  so whichever you meet is the same step and a rebalance of one starter's
+  branch leaves no hole to climb through.
+
+- **The Elite Four now steps member by member** — 42 → 44 → 46 → 47 — which
+  1.5.0 could not do. The cart records only the Hall of Fame, so the cap used
+  to sit on Will's roster for the whole gauntlet.
+
+  On vanilla Gold the ladder is now
+  **7 → 9 → 16 → 20 → 22 → 25 → 30 → 31 → 35 → 38 → 40 → 42 → 44 → 46 → 47 →
+  50 → 58 → 81**, verified by walking the mod against the extracted Gold
+  rosters.
+
+### Changed
+
+- **The Cherrygrove rival carries a +2 bonus**, so the game opens at 7 rather
+  than 5. His roster there is a single level-5 starter and a strict reading
+  would cap you before you had fought anything. It is the only milestone with
+  a bonus.
+- **The seven sub-50 Kanto gyms are no longer milestones.** Janine tops at 39
+  and Blaine at 50 — every Kanto gym but Viridian sits *below* the Champion
+  you just beat, so they could only ever pull a post-league cap back down.
+  Their badges still open Viridian, so nothing became skippable, and the
+  hand-written gate 1.5.0 needed to keep Janine's 39 out of a Johto run is
+  gone with them.
+- Both Kanto rival fights are gated on the Hall of Fame. Ungated, Mt. Moon's
+  45 would slot itself between Koga and Bruno and cap the middle of the Elite
+  Four on a fight nobody can reach.
+- Milestones may name the rosters they span instead of indexing them. Gold
+  names every roster — `class.trainers[i].id` is the member constant, the very
+  string `battle.ended` returns — so the table reads `WILL1` and `LANCE`
+  rather than `party = 1`. The index stays as the fallback for a dataset that
+  carries no names, which is Gen 1 and every fixture.
+
+### Fixed
+
+- The README still documented `SOFT +5` / `EASY +10`, which 1.2.0 renamed, and
+  said nothing about Gold at all.
+
+### Migration
+
+A save made before this version carries no record. It does not need one: the
+engine's own signals stay as the fallback — badges for the Johto gyms, the
+Hall of Fame for the league, the Kanto badges for Viridian, Red's own spawn
+flag. Such a save reads the *rival* milestones as unbeaten, but a cap never
+falls below the highest milestone already cleared, so it lands on the right
+step regardless, and the next rival fight records itself.
+
 ## 1.5.0
 
 ### Fixed

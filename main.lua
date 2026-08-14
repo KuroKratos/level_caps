@@ -8,7 +8,8 @@
 -- resolves to 14 / 21 / 24 / 29 / 43 / 43 / 47 / 50 / 56 / 58 / 60 / 62 / 65,
 -- which is exactly max(party levels) for each of them.
 --
---   LEVEL CAP       OFF | STRICT (the next milestone top level) | SOFT UP5 | EASY UP10
+--   LEVEL CAP       OFF | STRICT (the next milestone top level)
+--                       | MILD UP2 | SOFT UP5 | EASY UP10
 --   ALLOW OVER LVL  YES | NO (refuses the battle; at the league, offers the PC)
 --
 -- Both default to the permissive setting, so installing this mod and
@@ -54,33 +55,46 @@ local MILESTONES = {
     flag = "EVENT_BEAT_CHAMPION_RIVAL" },
 }
 
--- Johto, in progression order. Same rule as Kanto: the cap is read out of the
--- named trainer's real roster, so these are ids and flags only -- no levels.
+-- Gold, in ladder order. Same rule as Kanto: the cap is read out of the named
+-- trainer's real roster, so these are ids only -- no levels.
 --
--- On vanilla Gold that resolves to 9 / 16 / 20 / 25 / 30 / 35 / 31 / 40 for
--- the gyms, 42 / 44 / 46 / 47 for the Elite Four and 50 for Lance, which is
--- the ladder the Nuzlocke mod publishes. Deriving rather than copying is the
--- point: a mod that rebalances Whitney moves her cap with her.
+-- Gold does NOT have EVENT_BEAT_<LEADER> flags, and has no flag whatsoever
+-- for the rival. Beating a gym leader hands you a BADGE, and the badge IS the
+-- record: constants/engine_flags.asm makes ENGINE_ZEPHYRBADGE bit 0 of
+-- wJohtoBadges, and the port lands it in save.player.badges
+-- (src/world/gen2/World.lua:1669). Reading save.flags for a name nothing
+-- writes is why the cap sat at Falkner's 9 forever.
 --
--- Note the ladder is NOT monotonic -- Jasmine's Steelix is 35 and Pryce's
--- Piloswine 31, and the two gyms open in that order. The "lowest top level
--- among the unbeaten" rule handles it without a special case, exactly as it
--- handles Koga and Sabrina in Kanto.
--- Gold does NOT have EVENT_BEAT_<LEADER> flags. Beating a gym leader hands
--- you a BADGE, and the badge IS the record: constants/engine_flags.asm makes
--- ENGINE_ZEPHYRBADGE bit 0 of wJohtoBadges, and the port lands it in
--- save.player.badges (src/world/gen2/World.lua:1669). Reading save.flags for
--- a name nothing writes is why the cap sat at Falkner's 9 forever.
+-- A badge is enough to know a gym fell, but not enough for the rest: it
+-- cannot tell Will from Karen, and the rival awards nothing at all. So each
+-- milestone also names the ROSTERS it spans, and the mod records its own flag
+-- when battle.ended says one of them was beaten (see "Recording who has
+-- actually been beaten" below). `members` are Gold's own member constants --
+-- class.trainers[i].id, the very string battle.ended returns as
+-- trainer.memberId.
 --
--- Four different signals, one per phase:
+-- The engine's four signals stay as the fallback, so a save that predates
+-- this record still knows where it is:
 --
 --   Johto gym    save.player.badges[NAME]
 --   E4/Champion  save.hallOfFame.count > 0   -- the count IS "times the
---                champion was beaten" (src/core/gen2/Save.lua:185), and the
---                four members cannot be fought separately anyway
+--                champion was beaten" (src/core/gen2/Save.lua:185)
 --   Kanto gym    save.player.kantoBadges[NAME]
 --   Red          save.spawnAfterChampion == SPAWN_RED
 --                (HallOfFame.markRedCredits)
+--
+-- On vanilla Gold the whole table resolves to
+--
+--   7 -> 9 -> 16 -> 20 -> 22 -> 25 -> 30 -> 31 -> 35 -> 38 -> 40
+--     -> 42 -> 44 -> 46 -> 47 -> 50 -> 58 -> 81
+--
+-- Deriving rather than copying is the point: a mod that rebalances Whitney
+-- moves her cap with her.
+--
+-- Note the ladder is NOT monotonic in story order -- Jasmine's Steelix is 35
+-- and Pryce's Piloswine 31, and the two gyms open in that order. The "lowest
+-- top level among the unbeaten, floored by the highest already beaten" pair
+-- handles it without a special case.
 local function badge(store, name)
   return function(save)
     local owned = save and save.player and save.player[store]
@@ -101,63 +115,110 @@ local function redBeaten(save)
   return spawn ~= nil and save.spawnAfterChampion == spawn
 end
 
+-- The rival is fought seven times, and Gold stores each fight as THREE
+-- rosters, one per starter he took -- RIVAL1_3_TOTODILE is the third fight
+-- against the boy who took Totodile. Whichever you meet is the same step of
+-- the ladder, so one milestone spans all three, and the cap reads the highest
+-- of them: a mod that rebalances only one starter's branch cannot be
+-- out-levelled through the other two.
+local RIVAL_STARTERS = { "CHIKORITA", "CYNDAQUIL", "TOTODILE" }
+local function rivalFight(key, class, nth, extra)
+  local members, parties = {}, {}
+  for i, starter in ipairs(RIVAL_STARTERS) do
+    members[i] = ("%s_%d_%s"):format(class, nth, starter)
+    -- Index fallback only, for a dataset that carries no member names; the
+    -- three variants of fight N sit together, in starter order.
+    parties[i] = (nth - 1) * #RIVAL_STARTERS + i
+  end
+  local milestone = { key = key, label = "RIVAL", trainer = class,
+                      members = members, parties = parties }
+  for field, value in pairs(extra or {}) do milestone[field] = value end
+  return milestone
+end
+
 local GEN2_MILESTONES = {
-  -- ---- the eight Johto gyms
+  -- ---- Johto: the eight gyms and the five rival fights, in ladder order
+  --
+  -- Cherrygrove opens the game and his roster is a single level-5 starter, so
+  -- a strict reading would cap you at 5 before you have fought anything at
+  -- all. `bonus` lifts that one step to 7 -- enough room to arrive with a
+  -- second Pokemon rather than a coin flip. It is the only milestone that
+  -- carries one.
+  rivalFight("rival1", "RIVAL1", 1, { bonus = 2 }),
   { key = "zephyr",  label = "FALKNER",  trainer = "FALKNER",  party = 1,
-    done = badge("badges", "ZEPHYR") },
+    members = { "FALKNER1" }, done = badge("badges", "ZEPHYR") },
   { key = "hive",    label = "BUGSY",    trainer = "BUGSY",    party = 1,
-    done = badge("badges", "HIVE") },
+    members = { "BUGSY1" },   done = badge("badges", "HIVE") },
+  rivalFight("rival2", "RIVAL1", 2),
   { key = "plain",   label = "WHITNEY",  trainer = "WHITNEY",  party = 1,
-    done = badge("badges", "PLAIN") },
+    members = { "WHITNEY1" }, done = badge("badges", "PLAIN") },
+  rivalFight("rival3", "RIVAL1", 3),
   { key = "fog",     label = "MORTY",    trainer = "MORTY",    party = 1,
-    done = badge("badges", "FOG") },
+    members = { "MORTY1" },   done = badge("badges", "FOG") },
   { key = "storm",   label = "CHUCK",    trainer = "CHUCK",    party = 1,
-    done = badge("badges", "STORM") },
-  { key = "mineral", label = "JASMINE",  trainer = "JASMINE",  party = 1,
-    done = badge("badges", "MINERAL") },
+    members = { "CHUCK1" },   done = badge("badges", "STORM") },
   { key = "glacier", label = "PRYCE",    trainer = "PRYCE",    party = 1,
-    done = badge("badges", "GLACIER") },
+    members = { "PRYCE1" },   done = badge("badges", "GLACIER") },
+  rivalFight("rival4", "RIVAL1", 4),
+  { key = "mineral", label = "JASMINE",  trainer = "JASMINE",  party = 1,
+    members = { "JASMINE1" }, done = badge("badges", "MINERAL") },
+  rivalFight("rival5", "RIVAL1", 5),
   { key = "rising",  label = "CLAIR",    trainer = "CLAIR",    party = 1,
-    done = badge("badges", "RISING") },
+    members = { "CLAIR1" },   done = badge("badges", "RISING") },
 
-  -- ---- the Elite Four and the Champion. One signal for all five: the
-  -- ---- gauntlet cannot be left half-finished, so the cap sits at Will's
-  -- ---- roster for the whole run and lifts once the Hall of Fame is entered.
+  -- ---- the Elite Four, one step each, and the Champion.
+  --
+  -- The Hall of Fame is the fallback for all five because it is the only
+  -- thing the cart records; the member flags above it are what let the cap
+  -- actually walk 42 -> 44 -> 46 -> 47 through the gauntlet instead of
+  -- sitting on Will's roster until Lance falls.
   { key = "will",     label = "WILL",     trainer = "WILL",     party = 1,
-    done = championBeaten },
+    members = { "WILL1" },  done = championBeaten },
   { key = "koga2",    label = "KOGA",     trainer = "KOGA",     party = 1,
-    done = championBeaten },
+    members = { "KOGA1" },  done = championBeaten },
   { key = "bruno2",   label = "BRUNO",    trainer = "BRUNO",    party = 1,
-    done = championBeaten },
+    members = { "BRUNO1" }, done = championBeaten },
   { key = "karen",    label = "KAREN",    trainer = "KAREN",    party = 1,
-    done = championBeaten },
+    members = { "KAREN1" }, done = championBeaten },
   { key = "champion", label = "LANCE",    trainer = "CHAMPION", party = nil,
-    done = championBeaten },
+    members = { "LANCE" },  done = championBeaten },
 
-  -- ---- Kanto, which is the post-game half of Gold
-  { key = "boulder2", label = "BROCK",    trainer = "BROCK",    party = 1,
-    available = championBeaten, done = badge("kantoBadges", "BOULDER") },
-  { key = "cascade2", label = "MISTY",    trainer = "MISTY",    party = 1,
-    available = championBeaten, done = badge("kantoBadges", "CASCADE") },
-  { key = "thunder2", label = "LT.SURGE", trainer = "LT_SURGE", party = 1,
-    available = championBeaten, done = badge("kantoBadges", "THUNDER") },
-  { key = "rainbow2", label = "ERIKA",    trainer = "ERIKA",    party = 1,
-    available = championBeaten, done = badge("kantoBadges", "RAINBOW") },
-  { key = "soul2",    label = "JANINE",   trainer = "JANINE",   party = 1,
-    available = championBeaten, done = badge("kantoBadges", "SOUL") },
-  { key = "marsh2",   label = "SABRINA",  trainer = "SABRINA",  party = 1,
-    available = championBeaten, done = badge("kantoBadges", "MARSH") },
-  { key = "volcano2", label = "BLAINE",   trainer = "BLAINE",   party = 1,
-    available = championBeaten, done = badge("kantoBadges", "VOLCANO") },
+  -- ---- Kanto, the post-game half. Only what is ABOVE the Champion's 50
+  -- ---- belongs here: Janine tops at 39 and Blaine at 50, so putting the
+  -- ---- seven lesser gyms in the pool could only ever pull the cap back
+  -- ---- down a run that had just cleared the league. Their badges are still
+  -- ---- what opens Viridian, so nothing is skippable.
+  --
+  -- Both Kanto rival fights are post-Champion too (Mt. Moon, then the Indigo
+  -- Plateau Center). Ungated, Mt. Moon's 45 would slot itself between Koga
+  -- and Bruno and cap the middle of the gauntlet on a fight nobody can reach.
+  rivalFight("rival6", "RIVAL2", 1, { available = championBeaten }),
+  rivalFight("rival7", "RIVAL2", 2, { available = championBeaten }),
   { key = "earth2",   label = "BLUE",     trainer = "BLUE",     party = nil,
+    members = { "BLUE1" },
     available = championBeaten, done = badge("kantoBadges", "EARTH") },
 
   -- ---- and the mountain
   { key = "red",      label = "RED",      trainer = "RED",      party = nil,
+    members = { "RED1" },
     available = badge("kantoBadges", "EARTH"), done = redBeaten },
 }
 
-local OFFSETS = { strict = 0, soft = 5, easy = 10 }
+-- Milestones that name their rosters get a lookup set, built once: `beaten`
+-- and the win recorder both key on it, on every experience payout.
+for _, ladderTable in ipairs({ MILESTONES, GEN2_MILESTONES }) do
+  for _, milestone in ipairs(ladderTable) do
+    if milestone.members then
+      local set = {}
+      for _, id in ipairs(milestone.members) do set[id] = true end
+      milestone.memberSet = set
+    end
+  end
+end
+
+-- MILD sits between STRICT and SOFT. The Gen 1 font has no '+' glyph, which
+-- is why every label spells the bonus as UP<n> rather than +<n>.
+local OFFSETS = { strict = 0, mild = 2, soft = 5, easy = 10 }
 
 -- Where a refused battle can offer the PC instead of just saying no: inside
 -- the league you cannot walk back to a Pokemon Center between rooms, so a
@@ -179,6 +240,7 @@ return function(mod)
                   -- extracted charmap, so "SOFT +5" logged a missing-glyph
                   -- warning on every draw and printed a hole. UP says the
                   -- same thing with letters the font actually has.
+                  { "MILD UP2", "mild" },
                   { "SOFT UP5", "soft" }, { "EASY UP10", "easy" } } },
     { key = "allow_over", label = "ALLOW OVER LVL", type = "choice", default = "yes",
       choices = { { "YES", "yes" }, { "NO", "no" } } },
@@ -195,40 +257,65 @@ return function(mod)
   -- The two carts nest a roster differently, and neither is guessable from
   -- the other:
   --
-  --   Gen 1  class.parties[i]          -- a list of rosters
-  --   Gold   class.trainers[i].party   -- a list of TRAINERS, each with one
+  --   Gen 1  class.parties[i]                    -- a list of rosters
+  --   Gold   class.trainers[i] = { id, party }   -- a list of NAMED trainers
   --
-  -- Same meaning, so this normalises to "a list of rosters" and everything
-  -- downstream -- including the party index that picks Giovanni's third team
-  -- -- keeps working untouched.
+  -- Same meaning, so this normalises to one shape and everything downstream
+  -- -- including the party index that picks Giovanni's third team -- keeps
+  -- working untouched. Gold's names ride along: `id` is the member constant
+  -- (FALKNER1, RIVAL1_3_TOTODILE), which is the same string battle.ended
+  -- returns as trainer.memberId.
   local function rostersOf(trainer)
     if type(trainer) ~= "table" then return nil end
+    local out = {}
     if type(trainer.parties) == "table" and trainer.parties[1] then
-      return trainer.parties
-    end
-    if type(trainer.trainers) == "table" then
-      local out = {}
-      for _, entry in ipairs(trainer.trainers) do
+      for index, party in ipairs(trainer.parties) do
+        out[#out + 1] = { index = index, party = party }
+      end
+    elseif type(trainer.trainers) == "table" then
+      for index, entry in ipairs(trainer.trainers) do
         if type(entry) == "table" and type(entry.party) == "table" then
-          out[#out + 1] = entry.party
+          out[#out + 1] = { index = index, id = entry.id, party = entry.party }
         end
       end
-      if out[1] then return out end
     end
-    return nil
+    return out[1] and out or nil
   end
 
-  local function maxRosterLevel(trainer, partyIndex)
+  -- Which rosters a milestone spans. Named member ids first: they say what
+  -- they are and they survive the table being reordered. The index list is
+  -- the fallback for a dataset carrying no names -- Gen 1, every fixture --
+  -- and `party` is the single-index form the Kanto table has always used.
+  -- Neither means "all of them", which is how the Champion's three
+  -- starter-dependent teams resolve to one cap.
+  local function spanned(milestone, rosters)
+    if milestone.memberSet then
+      local named = {}
+      for _, entry in ipairs(rosters) do
+        if entry.id ~= nil and milestone.memberSet[entry.id] then
+          named[#named + 1] = entry
+        end
+      end
+      if named[1] then return named end
+    end
+    local wanted = milestone.parties
+      or (milestone.party and { milestone.party })
+    if not wanted then return rosters end
+    local out = {}
+    for _, index in ipairs(wanted) do
+      for _, entry in ipairs(rosters) do
+        if entry.index == index then out[#out + 1] = entry end
+      end
+    end
+    return out
+  end
+
+  local function maxRosterLevel(trainer, milestone)
     local rosters = rostersOf(trainer)
     if not rosters then return nil end
-    if partyIndex then
-      local one = rosters[partyIndex]
-      if not one then return nil end
-      rosters = { one }
-    end
     local best
-    for _, roster in ipairs(rosters) do
-      for _, slot in ipairs(roster or {}) do
+    for _, entry in ipairs(spanned(milestone, rosters)) do
+      for _, slot in ipairs(entry.party or {}) do
         local level = type(slot) == "table" and slot.level
         if type(level) == "number" and (not best or level > best) then
           best = level
@@ -262,9 +349,13 @@ return function(mod)
 
   -- Read through the merged registry, so another mod's rebalance of a gym
   -- leader is what this sees -- that is the whole point of not hard-coding.
+  -- `bonus` is the one place a number is added, and only one milestone
+  -- carries it (Cherrygrove; see the table).
   local function milestoneLevel(milestone)
-    return maxRosterLevel(mod.content.trainers:get(milestone.trainer),
-                          milestone.party)
+    local level = maxRosterLevel(mod.content.trainers:get(milestone.trainer),
+                                 milestone)
+    if not level then return nil end
+    return level + (milestone.bonus or 0)
   end
 
   -- The cap is the LOWEST top-level among the milestones still unbeaten.
@@ -275,10 +366,16 @@ return function(mod)
   -- either one leaves the other still governing. No ordering assumption, no
   -- special case, and it generalises to any milestone pair a mod unlocks
   -- together.
-  -- "Beaten" is a save FLAG on Red/Blue/Yellow and four different stores on
-  -- Gold, so a milestone may carry a predicate instead of a flag name. The
-  -- flag path is untouched, which is what keeps Gen 1 exactly as it was.
-  local function beaten(milestone, save)
+  -- "Beaten" is a save FLAG on Red/Blue/Yellow, four different stores on
+  -- Gold, and this mod's own record on top of both -- so a milestone may
+  -- carry a predicate instead of a flag name, and either may be overtaken by
+  -- a win we watched happen. The flag path is untouched, which is what keeps
+  -- Gen 1 exactly as it was.
+  --
+  -- `own` is passed in rather than read here: this runs once per milestone
+  -- per experience payout, and one read for the whole sweep is enough.
+  local function beaten(milestone, save, own)
+    if own and own[milestone.key] then return true end
     if milestone.done then return milestone.done(save) == true end
     return ((save and save.flags) or {})[milestone.flag] == true
   end
@@ -299,10 +396,18 @@ return function(mod)
   -- Without this floor the cap would drop the moment you entered Kanto,
   -- benching a team the game had just asked you to bring. Gen 1's ladder is
   -- monotonic, so this changes nothing there.
-  local function beatenCeiling(save)
+  -- This mod's own record of what it watched fall, out of save.modData.
+  -- Never nil, so every caller can index it without a guard.
+  local function ownWins()
+    local stored = mod.save:get("beaten", nil)
+    return type(stored) == "table" and stored or {}
+  end
+
+  local function beatenCeiling(save, own)
+    own = own or ownWins()
     local best
     for _, milestone in ipairs(milestones()) do
-      if available(milestone, save) and beaten(milestone, save) then
+      if available(milestone, save) and beaten(milestone, save, own) then
         local level = milestoneLevel(milestone)
         if level and (not best or level > best) then best = level end
       end
@@ -310,10 +415,11 @@ return function(mod)
     return best
   end
 
-  local function nextMilestone(save)
+  local function nextMilestone(save, own)
+    own = own or ownWins()
     local best, bestLevel
     for _, milestone in ipairs(milestones()) do
-      if available(milestone, save) and not beaten(milestone, save) then
+      if available(milestone, save) and not beaten(milestone, save, own) then
         local level = milestoneLevel(milestone)
         if level and (not bestLevel or level < bestLevel) then
           best, bestLevel = milestone, level
@@ -329,13 +435,69 @@ return function(mod)
     local offset = OFFSETS[mod.options:get("level_cap")]
     if not offset then return nil end
     local save = g and g.save
-    local milestone, level = nextMilestone(save)
+    local own = ownWins()
+    local milestone, level = nextMilestone(save, own)
     if not level then return nil end
     -- never below what has already been cleared
-    local floor_ = beatenCeiling(save)
+    local floor_ = beatenCeiling(save, own)
     if floor_ and floor_ > level then level = floor_ end
     return level + offset, milestone
   end
+
+  -- ------------------------------------------------------------------
+  -- Recording who has actually been beaten
+  --
+  -- Gold has no EVENT_BEAT_<LEADER> flag and nothing at all for the rival, so
+  -- half this ladder's milestones simply do not exist in the save. They do
+  -- not have to. `battle.ended` names the trainer it just ended, on BOTH
+  -- engines, and mod.save persists under save.modData[level_caps] on both too
+  -- (src/core/Game.lua:1046 and src/core/Game2.lua:204 wire the same bucket,
+  -- and Gold's Save.normalize keeps keys it does not know, so it round-trips).
+  -- So the mod writes its own flags.
+  --
+  --   Gen 1  battle.oppClass  + battle.partyIndex        class, roster index
+  --   Gold   trainer.classId  + trainer.memberId         two named constants
+  --
+  -- Only keys a milestone asked for are written: a Gold run walks past some
+  -- 390 trainers and the other 370-odd have no business in a save file.
+  local function winKey(battle)
+    if type(battle) ~= "table" then return nil end
+    local trainer = battle.trainer
+    if type(trainer) == "table" and trainer.classId and trainer.memberId then
+      return tostring(trainer.classId) .. "/" .. tostring(trainer.memberId)
+    end
+    if battle.oppClass then
+      return tostring(battle.oppClass) .. "/" .. tostring(battle.partyIndex or 1)
+    end
+    return nil
+  end
+
+  local watched
+  local function watchedKeys()
+    if watched then return watched end
+    watched = {}
+    for _, milestone in ipairs(milestones()) do
+      for _, member in ipairs(milestone.members or {}) do
+        watched[milestone.trainer .. "/" .. member] = milestone.key
+      end
+    end
+    return watched
+  end
+
+  -- A refusal ends the battle with result "run", so a fight this mod turned
+  -- away can never mark its own milestone beaten.
+  mod.events:on("battle.ended", function(ev)
+    if type(ev) ~= "table" or ev.result ~= "win" then return end
+    local key = winKey(ev.battle)
+    if not key then return end
+    local milestoneKey = watchedKeys()[key]
+    if not milestoneKey then return end
+    local own = ownWins()
+    if own[milestoneKey] then return end
+    own[milestoneKey] = true
+    mod.save:set("beaten", own)
+    mod.log:info("milestone %s cleared (%s)", milestoneKey, key)
+  end)
 
   -- ------------------------------------------------------------------
   -- Blocking the experience

@@ -115,6 +115,8 @@ do
   game.save.flags.EVENT_BEAT_BROCK = true
   T.eq(exports.currentCap(game), 19, "beating BROCK moves the cap to MISTY")
 
+  setOpt("level_cap", "mild")
+  T.eq(exports.currentCap(game), 21, "MILD adds 2")
   setOpt("level_cap", "soft")
   T.eq(exports.currentCap(game), 24, "SOFT adds 5")
   setOpt("level_cap", "easy")
@@ -238,7 +240,11 @@ do
   T.eq(rows[2].value(game), "OFF", "it starts on the default")
   T.eq(rows[2].step(game, 1), true, "stepping reports a change")
   T.eq(rows[2].value(game), "STRICT", "and advances through the choices")
-  rows[2].step(game, 1); rows[2].step(game, 1)
+  rows[2].step(game, 1)
+  T.eq(rows[2].value(game), "MILD UP2", "MILD is the step between STRICT and SOFT")
+  rows[2].step(game, 1)
+  T.eq(rows[2].value(game), "SOFT UP5", "then SOFT")
+  rows[2].step(game, 1)
   T.eq(rows[2].value(game), "EASY UP10", "forward through the whole list")
   rows[2].step(game, 1)
   T.eq(rows[2].value(game), "OFF", "and wraps")
@@ -504,4 +510,222 @@ end
 
 resetOpts()
 run.release()
+
+-- ------- Gold: per-encounter flags, the rival, and the Elite Four one by one
+--
+-- A second, separate load against a Gold-SHAPED dataset: the ladder is picked
+-- off the trainer registry, so a dataset with FALKNER and no OPP_BROCK is what
+-- selects it.  The rosters nest the way Gold's do -- class.trainers[i] =
+-- { id, party } -- because reading `id` is the whole mechanism under test.
+--
+-- The levels are deliberately not Gold's own 9/16/20/..., for the same reason
+-- the Kanto block above avoids 14/21/...: if the mod had a ladder baked in,
+-- none of this would pass.  They do keep Gold's SHAPE, including Jasmine
+-- sitting above Pryce even though her gym comes first.
+
+do
+  local G = T.fixtures.fresh()
+  G.trainers = G.trainers or {}
+
+  -- id -> { member = level } for the single-roster bosses
+  local BOSSES = {
+    FALKNER = { FALKNER1 = 8 },   BUGSY  = { BUGSY1 = 15 },
+    WHITNEY = { WHITNEY1 = 19 },  MORTY  = { MORTY1 = 26 },
+    CHUCK   = { CHUCK1 = 29 },    PRYCE  = { PRYCE1 = 32 },
+    JASMINE = { JASMINE1 = 36 },  CLAIR  = { CLAIR1 = 41 },
+    WILL    = { WILL1 = 43 },     KOGA   = { KOGA1 = 45 },
+    BRUNO   = { BRUNO1 = 47 },    KAREN  = { KAREN1 = 48 },
+    CHAMPION = { LANCE = 51 },    BLUE   = { BLUE1 = 59 },
+    RED     = { RED1 = 82 },
+  }
+  local function goldClass(id, members)
+    local entries = {}
+    for member, level in pairs(members) do
+      entries[#entries + 1] = { id = member, name = member,
+        party = { { level = level, species = "FIXMON_A" } } }
+    end
+    G.trainers[id] = { id = id, name = id, trainers = entries }
+  end
+  for id, members in pairs(BOSSES) do goldClass(id, members) end
+
+  -- The rival: three rosters per fight, one per starter, in starter order.
+  -- The three are given DIFFERENT levels on purpose -- a milestone spans all
+  -- three and must read the highest, or a mod that rebalanced one branch
+  -- would leave a hole to climb through.
+  local STARTERS = { "CHIKORITA", "CYNDAQUIL", "TOTODILE" }
+  local function goldRival(class, tops)
+    local entries = {}
+    for nth, top in ipairs(tops) do
+      for i, starter in ipairs(STARTERS) do
+        entries[#entries + 1] = {
+          id = ("%s_%d_%s"):format(class, nth, starter),
+          name = "RIVAL",
+          -- the middle starter is the highest; the max is `top`
+          party = { { level = top - (i == 2 and 0 or 1), species = "FIXMON_A" } },
+        }
+      end
+    end
+    G.trainers[class] = { id = class, name = class, trainers = entries }
+  end
+  goldRival("RIVAL1", { 4, 17, 23, 33, 37 })
+  goldRival("RIVAL2", { 46, 52 })
+
+  local goldRun = T.sdk.loadMod("mods/level_caps", { data = G })
+  T.eq(#goldRun.errors, 0,
+       "the Gold ladder loads clean (" .. tostring(goldRun.errors[1]) .. ")")
+  local gLoader = goldRun.loader
+  local gExports = gLoader.exports.level_caps
+
+  local function gSetOpt(key, value)
+    gLoader.modOptions = gLoader.modOptions or {}
+    gLoader.modOptions.level_caps = gLoader.modOptions.level_caps or {}
+    gLoader.modOptions.level_caps[key] = value
+  end
+  gSetOpt("level_cap", "strict")
+
+  -- a Gold-shaped save: badges by name, no save.flags at all
+  local gsave = { flags = {}, party = {}, options = {},
+                  player = { badges = {}, kantoBadges = {} } }
+  local gGame = { data = G, mods = gLoader, save = gsave }
+
+  -- winning a fight, the way the engine reports it
+  local function won(classId, memberId, result)
+    Runtime.emit("battle.ended", { result = result or "win",
+      battle = { trainer = { classId = classId, memberId = memberId } } })
+  end
+  local function recorded()
+    return gLoader.modSave.level_caps and gLoader.modSave.level_caps.beaten or {}
+  end
+
+  -- ---- the levels come out of the Gold-shaped rosters
+  do
+    local levels = gExports.milestoneLevels()
+    T.eq(levels.zephyr, 8, "a Gold roster is read through class.trainers[i].party")
+    T.eq(levels.rival2, 17,
+         "a rival fight reads the HIGHEST of its three starter branches")
+    T.eq(levels.rival1, 6,
+         "the Cherrygrove fight carries the only bonus: 4 + 2")
+    T.eq(levels.champion, 51, "the Champion is named by member, not by index")
+    T.eq(levels.red, 82, "and so is Red")
+    T.eq(levels.boulder2, nil,
+         "the sub-50 Kanto gyms are not milestones: they could only pull a "
+         .. "post-league cap back down")
+  end
+
+  -- ---- the ladder walks, one fight at a time
+  do
+    T.eq(gExports.currentCap(gGame), 6,
+         "a fresh Gold save is capped on the Cherrygrove rival, plus the bonus")
+
+    won("RIVAL1", "RIVAL1_1_TOTODILE")
+    T.eq(recorded().rival1, true, "the win was recorded under the milestone key")
+    T.eq(gExports.currentCap(gGame), 8,
+         "and any of the three starter branches clears the same milestone")
+
+    -- the engine's own signal still works on its own: this is what a save
+    -- that predates the record relies on
+    gsave.player.badges.ZEPHYR = true
+    T.eq(gExports.currentCap(gGame), 15, "a badge alone still clears a gym")
+
+    won("BUGSY", "BUGSY1")
+    T.eq(gExports.currentCap(gGame), 17, "then the Azalea rival")
+    won("RIVAL1", "RIVAL1_2_CYNDAQUIL")
+    T.eq(gExports.currentCap(gGame), 19, "then Whitney")
+    won("WHITNEY", "WHITNEY1")
+    T.eq(gExports.currentCap(gGame), 23, "then the Burned Tower rival")
+    won("RIVAL1", "RIVAL1_3_CHIKORITA")
+    won("MORTY", "MORTY1")
+    won("CHUCK", "CHUCK1")
+    T.eq(gExports.currentCap(gGame), 32, "then Pryce, who is BELOW Jasmine")
+
+    -- Jasmine's gym opens first but her roster is higher: beating her must
+    -- not leave the cap on Pryce's lower number.
+    won("JASMINE", "JASMINE1")
+    T.eq(gExports.currentCap(gGame), 36,
+         "beating Jasmine out of level order raises the cap to hers")
+    won("PRYCE", "PRYCE1")
+    T.eq(gExports.currentCap(gGame), 36, "and Pryce, below it, cannot lower it")
+
+    won("RIVAL1", "RIVAL1_4_CYNDAQUIL")
+    won("RIVAL1", "RIVAL1_5_CYNDAQUIL")
+    T.eq(gExports.currentCap(gGame), 41, "the last Johto step is Clair")
+    won("CLAIR", "CLAIR1")
+  end
+
+  -- ---- the Elite Four, one step each. This is what the per-encounter flags
+  -- ---- bought: the cart records only the Hall of Fame, so without them the
+  -- ---- cap would sit on Will's roster for the whole gauntlet.
+  do
+    T.eq(gExports.currentCap(gGame), 43, "the gauntlet opens on Will")
+    won("WILL", "WILL1")
+    T.eq(gExports.currentCap(gGame), 45, "beating Will alone moves it to Koga")
+    won("KOGA", "KOGA1")
+    T.eq(gExports.currentCap(gGame), 47,
+         "and Koga to Bruno -- the Kanto rival's 46 is gated behind the "
+         .. "Hall of Fame and cannot slot itself in here")
+    won("BRUNO", "BRUNO1")
+    T.eq(gExports.currentCap(gGame), 48, "then Karen")
+    won("KAREN", "KAREN1")
+    T.eq(gExports.currentCap(gGame), 51, "then Lance")
+    won("CHAMPION", "LANCE")
+
+    -- The engine writes the Hall of Fame on that win; that is what opens
+    -- Kanto, so the test does what the engine does.
+    gsave.hallOfFame = { count = 1 }
+    T.eq(gExports.currentCap(gGame), 51,
+         "entering Kanto cannot drop the cap below the league just cleared")
+    won("RIVAL2", "RIVAL2_1_TOTODILE")
+    T.eq(gExports.currentCap(gGame), 52, "the Indigo Plateau rival is next")
+    won("RIVAL2", "RIVAL2_2_TOTODILE")
+    T.eq(gExports.currentCap(gGame), 59, "then Blue")
+
+    gsave.player.kantoBadges.EARTH = true
+    T.eq(gExports.currentCap(gGame), 82,
+         "the Earth Badge is what opens Red, and he is the last step")
+    won("RED", "RED1")
+    T.eq(gExports.currentCap(gGame), nil, "beating Red lifts the cap entirely")
+  end
+
+  -- ---- what must NOT be recorded
+  do
+    local before = 0
+    for _ in pairs(recorded()) do before = before + 1 end
+
+    won("CHAMPION", "LANCE", "lose")
+    won("RED", "RED1", "run")
+    Runtime.emit("battle.ended",
+      { result = "win", battle = { kind = "wild", species = "FIXMON_A" } })
+    -- a route trainer: 390-odd of these exist and none belong in a save file
+    won("YOUNGSTER", "JOEY1")
+    Runtime.emit("battle.ended", { result = "win" })
+
+    local after = 0
+    for _ in pairs(recorded()) do after = after + 1 end
+    T.eq(after, before,
+         "a loss, a refusal, a wild fight, an unwatched trainer and a battle "
+         .. "with no object all record nothing")
+    T.eq(recorded().YOUNGSTER, nil, "and nothing is keyed by trainer either")
+  end
+
+  -- ---- a save that predates the record still knows where it is
+  do
+    local legacy = { flags = {}, party = {}, options = {},
+                     player = { badges = {}, kantoBadges = {} },
+                     hallOfFame = { count = 1 } }
+    local legacyGame = { data = G, mods = gLoader, save = legacy }
+    -- Wipe the record: this is a save made before the mod ever watched a
+    -- battle, carrying nothing but the engine's own signals.
+    gLoader.modSave.level_caps = {}
+    T.eq(gExports.currentCap(legacyGame), 51,
+         "with only the Hall of Fame the whole league still reads as cleared")
+    legacy.hallOfFame = nil
+    legacy.player.badges.ZEPHYR = true
+    legacy.player.badges.HIVE = true
+    T.eq(gExports.currentCap(legacyGame), 15,
+         "and two badges alone floor the cap on the higher of the two")
+  end
+
+  goldRun.release()
+end
+
 T.finish("level_caps")
