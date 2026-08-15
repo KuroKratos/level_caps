@@ -708,21 +708,27 @@ do
   end
 
   -- ---- a save that predates the record still knows where it is
+  -- Two independent saves, each with the record wiped: a save made before the
+  -- mod ever watched a battle carries nothing but the engine's own signals.
+  -- They are separate on purpose -- mutating one into the other would ask the
+  -- mod about a state no run reaches, a player who un-beats the Champion.
   do
-    local legacy = { flags = {}, party = {}, options = {},
-                     player = { badges = {}, kantoBadges = {} },
-                     hallOfFame = { count = 1 } }
-    local legacyGame = { data = G, mods = gLoader, save = legacy }
-    -- Wipe the record: this is a save made before the mod ever watched a
-    -- battle, carrying nothing but the engine's own signals.
     gLoader.modSave.level_caps = {}
-    T.eq(gExports.currentCap(legacyGame), 51,
+    local champ = { flags = {}, party = {}, options = {},
+                    player = { badges = {}, kantoBadges = {} },
+                    hallOfFame = { count = 1 } }
+    T.eq(gExports.currentCap({ data = G, mods = gLoader, save = champ }), 51,
          "with only the Hall of Fame the whole league still reads as cleared")
-    legacy.hallOfFame = nil
-    legacy.player.badges.ZEPHYR = true
-    legacy.player.badges.HIVE = true
-    T.eq(gExports.currentCap(legacyGame), 15,
-         "and two badges alone floor the cap on the higher of the two")
+
+    gLoader.modSave.level_caps = {}
+    local twoBadges = { flags = {}, party = {}, options = {},
+                        player = { badges = { ZEPHYR = true, HIVE = true },
+                                   kantoBadges = {} } }
+    -- The Azalea rival tops at 17 here, ABOVE Bugsy's 15, so the mod cannot
+    -- tell whether he is behind this player or ahead of them, and answers
+    -- conservatively. It heals at the next gym: see the mid-run block below.
+    T.eq(gExports.currentCap({ data = G, mods = gLoader, save = twoBadges }), 17,
+         "and two badges put the cap on the lowest rung it cannot rule out")
   end
 
   -- ---- installed mid-run, onto a save nobody watched
@@ -743,11 +749,10 @@ do
 
     mid.player.badges.ZEPHYR = true
     won("FALKNER", "FALKNER1")
-    T.eq(recorded().rival1, true,
-         "the first confirmed progress writes off what sits below it")
     T.eq(gExports.currentCap(midGame), 15,
-         "so the win pays: the cap moves to Bugsy rather than sitting on "
-         .. "Falkner's own roster")
+         "the win pays: the rival below it is written off as unreachable and "
+         .. "the cap moves to Bugsy, rather than sitting on the roster of the "
+         .. "gym that just awarded the badge")
 
     -- One-shot, and this is why. The Goldenrod Underground rival tops at 33
     -- here and is fought AFTER Jasmine's 36: level order is not play order, so
@@ -757,13 +762,71 @@ do
     won("WHITNEY", "WHITNEY1"); won("RIVAL1", "RIVAL1_3_CYNDAQUIL")
     won("MORTY", "MORTY1");    won("CHUCK", "CHUCK1")
     won("JASMINE", "JASMINE1"); won("PRYCE", "PRYCE1")
-    T.eq(recorded().rival4, nil,
-         "the catch-up never runs a second time")
     T.eq(gExports.currentCap(midGame), 36,
          "the fight still ahead keeps governing, floored by the higher gym "
-         .. "already cleared")
+         .. "already cleared -- it is above everything the mod watched, so it "
+         .. "is not written off")
     won("RIVAL1", "RIVAL1_4_CYNDAQUIL")
     T.eq(gExports.currentCap(midGame), 37, "and beating it moves the cap on")
+  end
+
+  -- ---- a mid-run install that lands BETWEEN two rungs heals itself
+  --
+  -- Installed after the Burned Tower rival (23) but before Morty (26), the
+  -- rival sits ABOVE the ceiling: the mod cannot tell him from a fight still
+  -- ahead, and holds. One boss later the ceiling has passed him and the record
+  -- reaches below him, so he is written off and the ladder resumes. Being
+  -- pinned for one boss is the price of never guessing wrong on a watched run.
+  do
+    gLoader.modSave.level_caps = {}
+    local between = { flags = {}, party = {}, options = {},
+                      player = { badges = { ZEPHYR = true, HIVE = true,
+                                            PLAIN = true }, kantoBadges = {} } }
+    local betweenGame = { data = G, mods = gLoader, save = between }
+    T.eq(gExports.currentCap(betweenGame), 23,
+         "it holds on the rung it cannot rule out")
+
+    between.player.badges.FOG = true
+    won("MORTY", "MORTY1")
+    T.eq(gExports.currentCap(betweenGame), 29,
+         "and the next boss heals it: the stale rung is written off and the "
+         .. "cap moves to Chuck")
+  end
+
+  -- ---- the real boot order, which is what actually shipped broken
+  --
+  -- `game.ready` fires on the boot SKELETON: Gold builds it in Game2.new and
+  -- announces it before game.ready with the stack still empty, and CONTINUE
+  -- then replaces the mod.save backing outright (src/core/Game2.lua:196-212).
+  -- A version of this that seeded itself from game.ready therefore read a save
+  -- with no badges, found nothing to do, and the real slot landed afterwards
+  -- with nobody left to look at it -- which is how a player holding the Zephyr
+  -- Badge stayed capped at Falkner's own roster through a release that was
+  -- supposed to fix exactly that.
+  --
+  -- Nothing is seeded now and nothing is stored, so there is no install moment
+  -- left to get wrong. The sequence below is that boot, in order, and the cap
+  -- is right at every point of it.
+  do
+    gLoader.modSave.level_caps = {}
+
+    local skeleton = { flags = {}, party = {}, options = {},
+                       player = { badges = {}, kantoBadges = {} } }
+    Runtime.emit("game.ready",
+                 { game = { data = G, mods = gLoader, save = skeleton } })
+    T.eq(gExports.currentCap({ data = G, mods = gLoader, save = skeleton }), 6,
+         "the boot skeleton has no progress, and reads as none")
+
+    -- CONTINUE: the slot the player actually has, Falkner already beaten
+    local slot = { flags = {}, party = {}, options = {},
+                   player = { badges = { ZEPHYR = true }, kantoBadges = {} } }
+    T.eq(gExports.currentCap({ data = G, mods = gLoader, save = slot }), 15,
+         "and the slot that arrives after it pays for the badge in hand, "
+         .. "with no event having fired in between")
+
+    -- the two coexist: answering for one save must not decide the other
+    T.eq(gExports.currentCap({ data = G, mods = gLoader, save = skeleton }), 6,
+         "asking about the skeleton again still answers for the skeleton")
   end
 
   -- ---- the seam mods/nuzlocke reads

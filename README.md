@@ -115,17 +115,25 @@ spawn flag.
 ### Installing mid-run
 
 The rival is the awkward case: he awards nothing, so an unrecorded fight is
-*unbeaten, lowest and unreachable*, and it would pin the cap there forever.
+*unbeaten, lowest and unreachable* — and it would drag the cap down to
+whatever you last beat for the rest of the run, so every win would pay the
+level of the boss you just beat and never the next one.
 
-So the first time the mod can see any confirmed progress — a badge on a loaded
-save, or its first recorded win — every signal-less milestone below it is
-written off as behind you. Once, and never again. On a fresh save that first
-confirmation is the Cherrygrove rival himself, nothing sits below him, and
-none of it runs.
+A milestone is written off as stranded behind you when all three hold:
 
-One-shot on purpose: level order is not play order. The Goldenrod Underground
-rival tops at 32 and is fought *after* Jasmine's 35, so a standing rule would
-keep writing off fights that are still ahead of you.
+1. it has no signal of its own (only the rival);
+2. it is at or below what you have already cleared;
+3. it is below everything this mod actually watched fall.
+
+The third is what keeps a followed run exact. Level order is not play order —
+the Goldenrod Underground rival tops at 32 and is fought *after* Jasmine's 35
+— so on a run the mod has followed from the start, its record reaches down to
+the first rung, nothing is ever under it, and nothing is ever written off.
+
+Nothing is stored and nothing is seeded: the answer is re-derived from the
+save in hand every time the cap is asked for, so no boot order can get it
+wrong. An install that lands *between* two rungs holds for one more boss and
+then heals itself.
 
 ## With the Nuzlocke mod
 

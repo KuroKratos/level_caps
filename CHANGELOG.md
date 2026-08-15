@@ -3,6 +3,39 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.7.1
+
+### Fixed
+
+- **1.7.0 did not actually fix the mid-run install.** A player holding the
+  Zephyr Badge was still capped at Falkner's own 9.
+
+  The catch-up it added hung off `game.ready` — and `game.ready` fires on the
+  **boot skeleton**, not on your slot. Gold builds that skeleton in
+  `Game2.new` and announces it "after the merge, before game.ready, stack
+  still empty"; both NEW GAME and CONTINUE then "replace the backing
+  outright" (`src/core/Game2.lua:196-212`). So the catch-up read a save with
+  no badges on it, found nothing to do, marked itself done, and the real slot
+  arrived afterwards with nobody left to look at it.
+
+  There is no install moment any more, because there is nothing to install.
+  Whether a milestone is stranded behind you is **re-derived from the save in
+  hand every time the cap is asked for**, from three conditions: it has no
+  signal of its own, it is at or below what you have already cleared, and it
+  is below everything this mod actually watched fall.
+
+  That third condition is what keeps a followed run exact. Level order is not
+  play order — the Goldenrod Underground rival tops at 32 and is fought after
+  Jasmine's 35 — so on a run the mod has followed from the start its record
+  reaches down to the first rung, nothing is ever under it, and nothing is
+  ever written off. The vanilla Gold ladder is unchanged, walked end to end
+  against the extracted rosters to prove it.
+
+  A mid-run install that lands *between* two rungs holds for one more boss and
+  then heals itself: that win puts the ceiling past the stale rung and a
+  record below it. Being conservative for one boss is the price of never
+  guessing wrong on a followed run.
+
 ## 1.7.0
 
 ### Fixed

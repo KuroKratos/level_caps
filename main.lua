@@ -417,65 +417,76 @@ return function(mod)
 
   -- A milestone with no engine signal of its own: the seven rival fights,
   -- which award neither badge nor flag. Only this mod's record can know one
-  -- is beaten, which is what `catchUp` below exists for.
+  -- is beaten, which is what the rule in nextMilestone exists for.
   local function signalless(milestone)
     return milestone.done == nil and milestone.flag == nil
   end
 
+  -- The lowest rung this mod actually watched fall. Everything at or below it
+  -- happened while the mod was installed, so an unrecorded milestone down
+  -- there was never fought; above it, the mod may simply not have been here.
+  local function watchedFrom(own)
+    local best
+    for _, milestone in ipairs(milestones()) do
+      if own[milestone.key] then
+        local level = milestoneLevel(milestone)
+        if level and (not best or level < best) then best = level end
+      end
+    end
+    return best
+  end
+
+  -- Is this milestone behind you, unrecorded, and unreachable?
+  --
+  -- Only this mod's record can know a rival fight fell -- the cart writes
+  -- nothing for one. So on a save the mod was installed onto, an unrecorded
+  -- rival is unbeaten, lowest, and impossible to fight again, and it collapses
+  -- `cap = max(lowest unbeaten, highest beaten)` into `highest beaten` for the
+  -- rest of the run: every win then pays exactly the level of the boss you
+  -- just beat and never the next one. A player holding the Zephyr Badge sat on
+  -- Falkner's own 9.
+  --
+  -- Three conditions, and the third is what keeps a WATCHED run exact:
+  --
+  --   * no signal of its own, so the record is the only witness;
+  --   * at or below what you have already cleared -- at OR below, because the
+  --     two often tie (Bugsy and the Azalea rival both top at 16), and a
+  --     milestone level with the ceiling contributes nothing the floor does
+  --     not already give;
+  --   * below everything the mod DID watch. On a run it has followed from the
+  --     start the record reaches down to the first rung, so nothing is ever
+  --     under it and nothing is ever written off -- which matters because
+  --     level order is not play order: the Goldenrod Underground rival tops at
+  --     32 and is fought after Jasmine's 35, and writing him off when Jasmine
+  --     fell would quietly delete a rung.
+  --
+  -- Nothing is stored and nothing is seeded, so there is no install moment to
+  -- get wrong: the answer is re-derived from the save in hand every time. A
+  -- mid-run install that lands between two rungs is pinned for one more boss
+  -- and then heals itself, because that win puts a record above the stale
+  -- rung and the ceiling past it.
+  local function strandedBehind(milestone, level, ceiling, watched)
+    if not (level and ceiling) then return false end
+    if not signalless(milestone) then return false end
+    if level > ceiling then return false end
+    return watched == nil or watched > level
+  end
+
   local function nextMilestone(save, own)
     own = own or ownWins()
+    local ceiling = beatenCeiling(save, own)
+    local watched = watchedFrom(own)
     local best, bestLevel
     for _, milestone in ipairs(milestones()) do
       if available(milestone, save) and not beaten(milestone, save, own) then
         local level = milestoneLevel(milestone)
-        if level and (not bestLevel or level < bestLevel) then
+        if level and not strandedBehind(milestone, level, ceiling, watched)
+           and (not bestLevel or level < bestLevel) then
           best, bestLevel = milestone, level
         end
       end
     end
     return best, bestLevel
-  end
-
-  -- One-shot catch-up for a save this mod did not watch from the start.
-  --
-  -- An unrecorded signal-less milestone pins the cap forever: unbeaten,
-  -- lowest, and unreachable, because the fight is behind you. And the floor
-  -- cannot rescue it, because the floor lifts the cap to what you have already
-  -- CLEARED rather than to the next thing ahead -- so beating Falkner with the
-  -- Cherrygrove rival unrecorded left the cap sitting on his own 9 instead of
-  -- moving to Bugsy's 16. A win that paid nothing, and no way out of it.
-  --
-  -- So the first time this mod can see any confirmed progress at all, every
-  -- signal-less milestone below it is written off as behind you -- once, and
-  -- never again. On a fresh save that first confirmation IS the Cherrygrove
-  -- rival, nothing sits below him, and this does nothing; everything after is
-  -- pure record.
-  --
-  -- One-shot rather than a standing rule, on purpose: level order is not play
-  -- order. The Goldenrod Underground rival tops at 32 and is fought after
-  -- Jasmine's 35, so a rule that wrote off every unrecorded fight below the
-  -- ceiling would keep writing off fights that are still ahead of you.
-  local function catchUp(save)
-    if mod.save:get("seeded", false) == true then return end
-    local own = ownWins()
-    local ceiling = beatenCeiling(save, own)
-    if not ceiling then return end
-    mod.save:set("seeded", true)
-    local caught = {}
-    for _, milestone in ipairs(milestones()) do
-      if signalless(milestone) and not own[milestone.key] then
-        local level = milestoneLevel(milestone)
-        if level and level < ceiling then
-          own[milestone.key] = true
-          caught[#caught + 1] = milestone.key
-        end
-      end
-    end
-    if not caught[1] then return end
-    mod.save:set("beaten", own)
-    mod.log:info("save started without this mod: %s written off as already "
-      .. "beaten, being below the level %d already cleared",
-      table.concat(caught, ", "), ceiling)
   end
 
   -- nil means "no cap": the row is OFF, or every milestone is beaten, or the
@@ -546,10 +557,6 @@ return function(mod)
     own[milestoneKey] = true
     mod.save:set("beaten", own)
     mod.log:info("milestone %s cleared (%s)", milestoneKey, key)
-    -- This may be the first confirmed progress on a save installed mid-run,
-    -- and the win itself is what makes the catch-up possible.
-    catchUp((game and game.save)
-      or (ev.battle and ev.battle.game and ev.battle.game.save))
   end)
 
   -- ------------------------------------------------------------------
@@ -765,11 +772,15 @@ return function(mod)
 
   local patched = false
   local capsOnly = false
+  -- `game.ready` fires on the boot SKELETON, not on your slot: Gold builds it
+  -- in Game2.new and announces it "after the merge, before game.ready, stack
+  -- still empty", and both NEW GAME and CONTINUE then "replace the backing
+  -- outright" (src/core/Game2.lua:196-212). It is the right place to capture
+  -- the live game object -- and the wrong place to read progress from, which
+  -- is why nothing here does. The cap derives itself from whatever save is in
+  -- hand at the moment it is asked for.
   mod.events:on("game.ready", function(ev)
     game = ev and ev.game
-    -- A save loaded with badges already on it is the other way this mod
-    -- first sees progress it did not watch happen.
-    catchUp(game and game.save)
     if patched then return end
     patched = true
     -- No hook can veto a battle -- the 45 the engine calls are all either
