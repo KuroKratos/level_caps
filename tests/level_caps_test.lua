@@ -725,6 +725,96 @@ do
          "and two badges alone floor the cap on the higher of the two")
   end
 
+  -- ---- installed mid-run, onto a save nobody watched
+  --
+  -- This is the shape that blocked a real playthrough: the Cherrygrove rival
+  -- was behind the player, nothing had recorded him, and beating Falkner left
+  -- the cap on Falkner's own roster instead of moving to Bugsy -- a win that
+  -- paid nothing, with no way out, because that rival can never be fought
+  -- again.
+  do
+    gLoader.modSave.level_caps = {}         -- never watched a battle
+    local mid = { flags = {}, party = {}, options = {},
+                  player = { badges = {}, kantoBadges = {} } }
+    local midGame = { data = G, mods = gLoader, save = mid }
+
+    T.eq(gExports.currentCap(midGame), 6,
+         "with no progress it can see, the cap opens on the rival")
+
+    mid.player.badges.ZEPHYR = true
+    won("FALKNER", "FALKNER1")
+    T.eq(recorded().rival1, true,
+         "the first confirmed progress writes off what sits below it")
+    T.eq(gExports.currentCap(midGame), 15,
+         "so the win pays: the cap moves to Bugsy rather than sitting on "
+         .. "Falkner's own roster")
+
+    -- One-shot, and this is why. The Goldenrod Underground rival tops at 33
+    -- here and is fought AFTER Jasmine's 36: level order is not play order, so
+    -- a standing "below the ceiling means behind you" rule would write off a
+    -- fight still ahead of the player.
+    won("BUGSY", "BUGSY1");    won("RIVAL1", "RIVAL1_2_CYNDAQUIL")
+    won("WHITNEY", "WHITNEY1"); won("RIVAL1", "RIVAL1_3_CYNDAQUIL")
+    won("MORTY", "MORTY1");    won("CHUCK", "CHUCK1")
+    won("JASMINE", "JASMINE1"); won("PRYCE", "PRYCE1")
+    T.eq(recorded().rival4, nil,
+         "the catch-up never runs a second time")
+    T.eq(gExports.currentCap(midGame), 36,
+         "the fight still ahead keeps governing, floored by the higher gym "
+         .. "already cleared")
+    won("RIVAL1", "RIVAL1_4_CYNDAQUIL")
+    T.eq(gExports.currentCap(midGame), 37, "and beating it moves the cap on")
+  end
+
+  -- ---- the seam mods/nuzlocke reads
+  --
+  -- Its provider registry walks the loaded mods for
+  -- exports.nuzlocke_provider.<capability>. The assertions below reproduce
+  -- what its own providerCapInfo does with the answer, so the contract is
+  -- tested rather than assumed.
+  do
+    local provider = gExports.nuzlocke_provider
+      and gExports.nuzlocke_provider.level_caps
+    T.check(type(provider) == "table", "a level_caps provider is published")
+    T.eq(type(provider.get_next_cap), "function",
+         "carrying the getter providerCapInfo looks for")
+    T.eq(provider.exclusive, nil,
+         "and claiming no exclusivity: this owns the cap, not the ruleset")
+
+    gLoader.modSave.level_caps = {}
+    local save = { flags = {}, party = {}, options = {},
+                   player = { badges = {}, kantoBadges = {} } }
+    local nuzGame = { data = G, mods = gLoader, save = save }
+
+    gSetOpt("level_cap", "strict")
+    T.eq(provider.is_active(), true, "active while LEVEL CAP is on")
+
+    local result = provider.get_next_cap(nuzGame, save)
+    T.eq(type(result), "table", "the getter answers a table")
+    local cap = tonumber(result.cap or result.level or result.max_level)
+    local name = tostring(result.name or result.boss or "EXTERNAL")
+    T.eq(cap, 6, "with the cap providerCapInfo will read")
+    T.check(cap > 0 and cap <= 100,
+            "inside the 1..100 band it accepts, or it would fall back")
+    T.eq(name, "RIVAL", "and the milestone name its tracker will show")
+
+    -- the save arrives on its own when the game object does not
+    local bare = provider.get_next_cap(nil, save)
+    T.eq(type(bare) == "table" and bare.cap, 6,
+         "and a bare save is enough to answer")
+
+    gSetOpt("level_cap", "easy")
+    T.eq(tonumber(provider.get_next_cap(nuzGame, save).cap), 16,
+         "the offset the player chose is in the number nuzlocke displays")
+
+    -- OFF is what hands the mechanic back: nuzlocke stops deferring and its
+    -- own ladder governs again, which is what turning this row off means.
+    gSetOpt("level_cap", "off")
+    T.eq(provider.is_active(), false, "and inactive while LEVEL CAP is OFF")
+    T.eq(provider.get_next_cap(nuzGame, save), nil, "answering nothing")
+    gSetOpt("level_cap", "strict")
+  end
+
   goldRun.release()
 end
 

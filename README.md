@@ -110,9 +110,38 @@ refused battle and a wild fight all record nothing.
 The engine's own signals stay as the fallback, so a save made before the mod
 ever watched a battle still knows where it is: badges for the Johto gyms, the
 Hall of Fame for the league, the Kanto badges for Viridian, and Red's own
-spawn flag. Such a save reads the *rival* milestones as unbeaten, but a cap
-never falls below the highest milestone already cleared, so it lands on the
-right step anyway.
+spawn flag.
+
+### Installing mid-run
+
+The rival is the awkward case: he awards nothing, so an unrecorded fight is
+*unbeaten, lowest and unreachable*, and it would pin the cap there forever.
+
+So the first time the mod can see any confirmed progress — a badge on a loaded
+save, or its first recorded win — every signal-less milestone below it is
+written off as behind you. Once, and never again. On a fresh save that first
+confirmation is the Cherrygrove rival himself, nothing sits below him, and
+none of it runs.
+
+One-shot on purpose: level order is not play order. The Goldenrod Underground
+rival tops at 32 and is fought *after* Jasmine's 35, so a standing rule would
+keep writing off fights that are still ahead of you.
+
+## With the Nuzlocke mod
+
+`mods/nuzlocke` keeps a capability-based provider registry, and this mod
+publishes a `level_caps` provider into it. Two things follow, both by that
+mod's own design:
+
+- its tracker, Trainer Card and Gym Guide read **this** mod's cap and
+  milestone name, because one calculation feeds all of its cap displays;
+- its own `exp.gain` wrapper steps aside while a provider is active, so the
+  two never compound — one ladder, enforced once.
+
+Set `LEVEL CAP` to `OFF` and the provider goes inactive, which hands the
+mechanic straight back to the Nuzlocke ladder. Nothing here claims exclusivity
+over the Nuzlocke ruleset itself, and the whole thing is inert when the mod is
+not installed.
 
 ## The two rows
 

@@ -415,6 +415,13 @@ return function(mod)
     return best
   end
 
+  -- A milestone with no engine signal of its own: the seven rival fights,
+  -- which award neither badge nor flag. Only this mod's record can know one
+  -- is beaten, which is what `catchUp` below exists for.
+  local function signalless(milestone)
+    return milestone.done == nil and milestone.flag == nil
+  end
+
   local function nextMilestone(save, own)
     own = own or ownWins()
     local best, bestLevel
@@ -427,6 +434,48 @@ return function(mod)
       end
     end
     return best, bestLevel
+  end
+
+  -- One-shot catch-up for a save this mod did not watch from the start.
+  --
+  -- An unrecorded signal-less milestone pins the cap forever: unbeaten,
+  -- lowest, and unreachable, because the fight is behind you. And the floor
+  -- cannot rescue it, because the floor lifts the cap to what you have already
+  -- CLEARED rather than to the next thing ahead -- so beating Falkner with the
+  -- Cherrygrove rival unrecorded left the cap sitting on his own 9 instead of
+  -- moving to Bugsy's 16. A win that paid nothing, and no way out of it.
+  --
+  -- So the first time this mod can see any confirmed progress at all, every
+  -- signal-less milestone below it is written off as behind you -- once, and
+  -- never again. On a fresh save that first confirmation IS the Cherrygrove
+  -- rival, nothing sits below him, and this does nothing; everything after is
+  -- pure record.
+  --
+  -- One-shot rather than a standing rule, on purpose: level order is not play
+  -- order. The Goldenrod Underground rival tops at 32 and is fought after
+  -- Jasmine's 35, so a rule that wrote off every unrecorded fight below the
+  -- ceiling would keep writing off fights that are still ahead of you.
+  local function catchUp(save)
+    if mod.save:get("seeded", false) == true then return end
+    local own = ownWins()
+    local ceiling = beatenCeiling(save, own)
+    if not ceiling then return end
+    mod.save:set("seeded", true)
+    local caught = {}
+    for _, milestone in ipairs(milestones()) do
+      if signalless(milestone) and not own[milestone.key] then
+        local level = milestoneLevel(milestone)
+        if level and level < ceiling then
+          own[milestone.key] = true
+          caught[#caught + 1] = milestone.key
+        end
+      end
+    end
+    if not caught[1] then return end
+    mod.save:set("beaten", own)
+    mod.log:info("save started without this mod: %s written off as already "
+      .. "beaten, being below the level %d already cleared",
+      table.concat(caught, ", "), ceiling)
   end
 
   -- nil means "no cap": the row is OFF, or every milestone is beaten, or the
@@ -497,6 +546,10 @@ return function(mod)
     own[milestoneKey] = true
     mod.save:set("beaten", own)
     mod.log:info("milestone %s cleared (%s)", milestoneKey, key)
+    -- This may be the first confirmed progress on a save installed mid-run,
+    -- and the win itself is what makes the catch-up possible.
+    catchUp((game and game.save)
+      or (ev.battle and ev.battle.game and ev.battle.game.save))
   end)
 
   -- ------------------------------------------------------------------
@@ -714,6 +767,9 @@ return function(mod)
   local capsOnly = false
   mod.events:on("game.ready", function(ev)
     game = ev and ev.game
+    -- A save loaded with badges already on it is the other way this mod
+    -- first sees progress it did not watch happen.
+    catchUp(game and game.save)
     if patched then return end
     patched = true
     -- No hook can veto a battle -- the 45 the engine calls are all either
@@ -834,4 +890,48 @@ return function(mod)
     if not cap then return {} end
     return overLevelled(target, cap)
   end
+
+  -- ------------------------------------------------------------------
+  -- The Nuzlocke mod's provider registry
+  --
+  -- mods/nuzlocke keeps a capability-based registry (its "INTER-MOD
+  -- COMPATIBILITY / PROVIDER REGISTRY" block): it walks the loaded mods and
+  -- reads `exports.nuzlocke_provider.<capability>` off each one. Publishing a
+  -- `level_caps` provider does two things there, and its own comments say so:
+  --
+  --   * `nextLevelCapInfo` prefers the provider over its own ladder, and that
+  --     one calculation feeds "enforcement, tracker, Trainer Card, Gym Guide
+  --     text, and any other cap display" -- so the tracker shows OUR number
+  --     and OUR milestone name;
+  --   * its `exp.gain` wrapper returns straight to vanilla when a provider is
+  --     active, so only one mod enforces and the two cannot compound.
+  --
+  -- `is_active` is what makes that safe: with LEVEL CAP on OFF we claim
+  -- nothing and the Nuzlocke ladder governs again, which is what a player who
+  -- turned this row off is asking for. `exclusive` is deliberately absent --
+  -- we own the cap, not the Nuzlocke ruleset.
+  --
+  -- All of this is inert when the mod is absent: nobody reads the export.
+  local function providerTarget(g, save)
+    if type(g) == "table" and type(g.save) == "table" then return g end
+    if type(save) == "table" then return { save = save } end
+    return game
+  end
+
+  mod.exports.nuzlocke_provider = {
+    level_caps = {
+      is_active = function()
+        return OFFSETS[mod.options:get("level_cap")] ~= nil
+      end,
+      get_next_cap = function(g, save)
+        local cap, milestone = currentCap(providerTarget(g, save))
+        if not cap then return nil end
+        -- providerCapInfo drops anything over 100 and falls back to the
+        -- Nuzlocke ladder; clamping keeps a generous offset near the top of
+        -- the game from silently handing the cap back.
+        return { cap = math.min(cap, 100),
+                 name = milestone and milestone.label or "CAP" }
+      end,
+    },
+  }
 end

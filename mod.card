@@ -16,6 +16,7 @@ return {
       "inside the league, a refused battle offers to send the over-levelled mons to the PC",
       "UP TO CAP in the party submenu: walks a Pokemon to the cap one level at a time, so no level-up move is skipped, with an evolution check at every threshold",
       "currentCap, nextMilestone, milestoneLevels and overLevelled exports for trackers and HUDs",
+      "a nuzlocke_provider.level_caps export: with mods/nuzlocke installed, its tracker, Trainer Card and Gym Guide read this cap, and its own exp.gain wrapper steps aside so the two never compound. LEVEL CAP on OFF hands the mechanic back",
     },
     known = {
       "the caps are read from each trainer's real roster, so a mod that rebalances the gym curve moves them automatically; nothing here hard-codes 14/21/24/29/43/43/47/50/56/58/60/62/65",
@@ -27,6 +28,7 @@ return {
       "the milestone-to-trainer map is fixed (OPP_BROCK ... OPP_RIVAL3 on Gen 1, FALKNER ... RED on Gold), so a total conversion with different leaders gets no caps rather than wrong ones",
       "needs engine_internals: no hook among the engine's 45 can veto a battle, so BattleState.newTrainer is patched at its single choke point",
       "Gold has no EVENT_BEAT_<LEADER> flag and none at all for the rival, so the mod records its own from battle.ended into save.modData; only rosters a milestone named are written, and the engine's badges / Hall of Fame / Red spawn stay as the fallback for a save made before it watched anything",
+      "installed mid-run, the first confirmed progress writes off every signal-less milestone below it as already beaten -- once, and never again, because level order is not play order (the Goldenrod Underground rival tops at 32 and is fought after Jasmine's 35)",
       "the Cherrygrove rival is the only milestone with a bonus (+2): his roster is one level-5 starter and a strict reading would cap the opening of the game at 5",
       "the sub-50 Kanto gyms are deliberately not milestones -- Janine tops at 39 and Blaine at 50, so they could only pull a post-league cap back down; their badges still open Viridian",
       "ALLOW OVER LVL is Gen 1 only: Gold's World:startBattle constructs and pushes in one call, so there is no factory to wrap. The row says so and stays off",

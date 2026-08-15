@@ -3,6 +3,51 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.7.0
+
+### Fixed
+
+- **Installing the mod mid-run could stop the cap from ever moving again.**
+  With the Cherrygrove rival already behind you but unrecorded, beating
+  Falkner left the cap on Falkner's own roster — 9 — instead of moving to
+  Bugsy's 16. The win paid nothing, and there was no way out: that rival
+  cannot be fought a second time.
+
+  1.6.x added milestones with no engine signal of their own — the seven rival
+  fights award neither badge nor flag — so only this mod's own record can know
+  one is beaten. An unrecorded one is unbeaten, lowest, and unreachable, and
+  it pins the cap there. The floor cannot rescue it either: the floor lifts
+  the cap to what you have already *cleared*, never to the next thing ahead.
+
+  The first time the mod can see any confirmed progress at all — a badge on a
+  loaded save, or its first recorded win — every signal-less milestone below
+  it is written off as behind you. **Once**, and never again.
+
+  One-shot on purpose, because level order is not play order: the Goldenrod
+  Underground rival tops at 32 and is fought *after* Jasmine's 35, so a
+  standing "below the ceiling means behind you" rule would keep writing off
+  fights still ahead of you. On a fresh save the first confirmation is the
+  Cherrygrove rival himself, nothing sits below him, and none of this runs.
+
+### Added
+
+- **The cap now shows up in the Nuzlocke mod's tracker.** `mods/nuzlocke`
+  keeps a capability-based provider registry; this mod now publishes
+  `exports.nuzlocke_provider.level_caps`, and its own comments say what that
+  buys: `nextLevelCapInfo` prefers the provider over its internal ladder, and
+  that one calculation feeds "enforcement, tracker, Trainer Card, Gym Guide
+  text, and any other cap display". So the tracker shows this mod's number and
+  the milestone name behind it.
+
+  Its `exp.gain` wrapper also returns straight to vanilla while a provider is
+  active, so the two mods cannot compound: one ladder, enforced once.
+
+  `is_active` is what keeps that honest — with `LEVEL CAP` on `OFF` this mod
+  claims nothing and the Nuzlocke ladder governs again. No exclusivity is
+  claimed: this owns the cap, not the Nuzlocke ruleset. All of it is inert
+  when the mod is absent, and a disabled or failed install drops out of the
+  registry on its own.
+
 ## 1.6.2
 
 *1.6.0 and 1.6.1 carry this same change. The release workflow cuts its own tag
