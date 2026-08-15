@@ -731,11 +731,11 @@ return function(mod)
       local def = bumpOneLevel(g, mon)
       local name = mon.nickname or def.name
       say(g, ("%s grew\nto level %d!"):format(name, mon.level), function()
-        -- Gold builds its stats window elsewhere; without one, the walk
-        -- still levels the mon and still offers its moves, it just does not
-        -- show the box.
+        -- Never nil here: the submenu entry is gated on this very member, so
+        -- a game without it never offers the walk. The earlier version tried
+        -- to carry on without it and called an undefined `done`, which is
+        -- what crashed UP TO CAP on Gold the moment it was picked.
         local StatBox = require("src.battle.BattleState").StatBox
-        if not StatBox then return learnMovesFor(g, mon, def, mon.level, done) end
         g.stack:push(StatBox.new(g, mon, function()
           learnMovesFor(g, mon, def, mon.level, function()
             -- Checked per level rather than once at the end, so a two-stage
@@ -753,11 +753,44 @@ return function(mod)
     step()
   end
 
+  -- The walk is Gen 1 machinery end to end, and Gold has none of it:
+  --
+  --   * no `BattleState.StatBox` -- the level-up window is built elsewhere;
+  --   * no move-learn screen outside battle. Gold's four-move prompt is a
+  --     BATTLE emission (`kind = "choose-forget"`, src/battle/gen2/
+  --     Battle.lua:3231) that only `src/ui/gen2/BattleState.lua` consumes, so
+  --     there is nothing to push from the party menu;
+  --   * different fields on the mon anyway -- Gold's own Rare Candy writes
+  --     `mon.experience` and `mon.maxHp` where this writes `mon.exp` and
+  --     recalculates through Gen 1's `Stats.calc`
+  --     (src/core/gen2/ItemEffects.lua rareCandy).
+  --
+  -- So the entry is offered only where it works, the way ALLOW OVER LVL
+  -- already is. Offering it on Gold and letting it fall over halfway is what
+  -- 1.4.0 shipped: it crashed the moment it was picked.
+  -- Asked fresh every time rather than memoised -- `require` is cached, so
+  -- this is a table lookup -- with only the explanation held back to once.
+  local saidWhy = false
+  local function canWalk()
+    local ok, BattleState = pcall(require, "src.battle.BattleState")
+    if ok and type(BattleState) == "table" and BattleState.StatBox ~= nil then
+      return true
+    end
+    if not saidWhy then
+      saidWhy = true
+      mod.log:info("UP TO CAP needs the level-up window and the move-learn "
+        .. "screen this game does not have, so it is not offered; LEVEL CAP "
+        .. "itself works normally")
+    end
+    return false
+  end
+
   mod.hooks:wrap("ui.party.submenu", function(next, g, items, mon, ctx)
     local out = next(g, items, mon, ctx)
     if type(out) ~= "table" or type(mon) ~= "table" then return out end
     -- Not mid-battle, and not on a mon that is already there or past it.
     if ctx and ctx.battle then return out end
+    if not canWalk() then return out end
     local cap = currentCap(g)
     if not cap or (mon.level or 1) >= cap then return out end
     -- CANCEL exists only in the battle submenu; out of battle the anchor is

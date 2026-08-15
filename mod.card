@@ -33,6 +33,7 @@ return {
       "the Cherrygrove rival is the only milestone with a bonus (+2): his roster is one level-5 starter and a strict reading would cap the opening of the game at 5",
       "the sub-50 Kanto gyms are deliberately not milestones -- Janine tops at 39 and Blaine at 50, so they could only pull a post-league cap back down; their badges still open Viridian",
       "ALLOW OVER LVL is Gen 1 only: Gold's World:startBattle constructs and pushes in one call, so there is no factory to wrap. The row says so and stays off",
+      "UP TO CAP is Gen 1 only: Gold has no BattleState.StatBox, no move-learn screen outside battle (its four-move prompt is a battle emission its own battle screen consumes) and different fields on the mon, so the entry is not offered there",
       "Gold's Elite Four has no rematch rosters (one team per boss class), so re-clearing the league moves no cap",
     },
   },

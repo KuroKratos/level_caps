@@ -178,6 +178,13 @@ an empty party.
 
 ## UP TO CAP
 
+**Gen 1 only.** The walk is Gen 1 machinery end to end: Gold has no
+`BattleState.StatBox`, no move-learn screen outside battle — its four-move
+prompt is a *battle* emission its own battle screen consumes — and its Rare
+Candy writes different fields on the mon (`mon.experience`, `mon.maxHp`). So
+the entry is not offered there, the way `ALLOW OVER LVL` is not. `LEVEL CAP`
+itself is unaffected; it rides `exp.gain`, which Gold raises.
+
 Open a Pokémon in the party menu and, whenever it is below the current cap,
 there is an **UP TO CAP** entry beside `STATS` and `SWITCH`. It walks that
 Pokémon up to the cap — **one level at a time**.

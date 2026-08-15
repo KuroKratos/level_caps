@@ -829,6 +829,35 @@ do
          "asking about the skeleton again still answers for the skeleton")
   end
 
+  -- ---- UP TO CAP is not offered where it cannot run
+  --
+  -- Gold has no BattleState.StatBox and no move-learn screen outside battle
+  -- (its four-move prompt is a battle emission, src/battle/gen2/
+  -- Battle.lua:3231). The walk offered itself anyway and fell over on the
+  -- first level: with no StatBox it called an undefined `done`, which is a
+  -- crash the instant the entry is picked. Nothing about the option list is
+  -- generation-aware, so the presence test is the whole guard -- and this is
+  -- the test that it exists.
+  do
+    gLoader.modSave.level_caps = {}
+    gSetOpt("level_cap", "strict")
+    local walkSave = { flags = {}, party = {}, options = {},
+                       player = { badges = {}, kantoBadges = {} } }
+    local walkGame = { data = G, mods = gLoader, save = walkSave }
+    local target = Pokemon.new(G, "FIXMON_A", 3)
+    target.level = 3
+
+    local BattleState = require("src.battle.BattleState")
+    local realStatBox = BattleState.StatBox
+    BattleState.StatBox = nil
+    local rows = Runtime.call("ui.party.submenu", function(_, i) return i end,
+                              walkGame, { { label = "STATS" } }, target, {})
+    BattleState.StatBox = realStatBox
+    T.eq(#rows, 1,
+         "with no level-up window, UP TO CAP is not offered at all rather "
+         .. "than offered and fatal")
+  end
+
   -- ---- the seam mods/nuzlocke reads
   --
   -- Its provider registry walks the loaded mods for

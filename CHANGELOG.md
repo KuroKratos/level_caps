@@ -3,6 +3,39 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.7.2
+
+### Fixed
+
+- **`UP TO CAP` crashed the instant it was picked on Gold.** The walk read
+  `BattleState.StatBox`, found nothing — Gold builds its level-up window
+  elsewhere — and took a branch that passed an **undefined** `done` on to the
+  move prompt. The first level with no move to learn called it, and calling
+  nil ends the frame. A latent bug since 1.4.0, in the very code that was
+  meant to make the walk survive Gold.
+
+### Changed
+
+- **`UP TO CAP` is Gen 1 only now, and says so**, like `ALLOW OVER LVL`
+  already did. The walk is Gen 1 machinery end to end and Gold has none of it:
+
+  - no `BattleState.StatBox`;
+  - no move-learn screen outside battle at all — Gold's four-move prompt is a
+    **battle emission** (`kind = "choose-forget"`,
+    `src/battle/gen2/Battle.lua:3231`) that only its own battle screen
+    consumes, so there is nothing a party menu could push;
+  - different fields on the mon regardless: Gold's own Rare Candy writes
+    `mon.experience` and `mon.maxHp` where this writes `mon.exp` and
+    recalculates through Gen 1's `Stats.calc`
+    (`src/core/gen2/ItemEffects.lua`).
+
+  Patching only the crash would have left a walk that wrote Gen 1 fields onto
+  a Gold Pokémon and skipped every level-up move. A Gold version is a real
+  port, not a guard — it needs a move-learn screen the game does not have out
+  of battle — so the entry is simply not offered there.
+
+  `LEVEL CAP` itself is untouched: it rides `exp.gain`, which Gold raises.
+
 ## 1.7.1
 
 ### Fixed
